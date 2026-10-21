@@ -1,0 +1,199 @@
+name: wx-channel-insight-offline
+
+services:
+  postgres:
+    image: insight-preview/postgres:16-alpine
+    container_name: wx_channel_insight_offline_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${INSIGHT_POSTGRES_PASSWORD:?INSIGHT_POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: wx_channel_insight
+    ports:
+      - "15432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d wx_channel_insight"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - insight_offline_postgres_data:/var/lib/postgresql/data
+    networks:
+      - insight_offline_net
+
+  redis:
+    image: insight-preview/redis:7-alpine
+    container_name: wx_channel_insight_offline_redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "16379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - insight_offline_redis_data:/data
+    networks:
+      - insight_offline_net
+
+  migrate:
+    image: insight-preview/api:preview
+    container_name: wx_channel_insight_offline_migrate
+    restart: "on-failure:5"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      INSIGHT_POSTGRES_DSN: postgres://postgres:${INSIGHT_POSTGRES_PASSWORD:?INSIGHT_POSTGRES_PASSWORD must be set}@postgres:5432/wx_channel_insight?sslmode=disable
+    working_dir: /app
+    entrypoint: ["/app/insight-jobs", "bootstrap-schema"]
+    networks:
+      - insight_offline_net
+
+  api:
+    image: insight-preview/api:preview
+    container_name: wx_channel_insight_offline_api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      INSIGHT_RUNTIME_PROFILE: team-preview
+      INSIGHT_API_ADDR: ":18081"
+      INSIGHT_POSTGRES_DSN: postgres://postgres:${INSIGHT_POSTGRES_PASSWORD:?INSIGHT_POSTGRES_PASSWORD must be set}@postgres:5432/wx_channel_insight?sslmode=disable
+      INSIGHT_REDIS_ADDR: redis:6379
+      INSIGHT_WX_CHANNEL_BASE_URL: ${INSIGHT_WX_CHANNEL_BASE_URL:-http://host.docker.internal:2026}
+      INSIGHT_DEFAULT_HUB_USER_ID: ${INSIGHT_DEFAULT_HUB_USER_ID:-insight:operator:local}
+      INSIGHT_DEFAULT_DEVICE_COUNT: ${INSIGHT_DEFAULT_DEVICE_COUNT:-1}
+      INSIGHT_LOCAL_OPERATOR: "false"
+      INSIGHT_DEMO_CONTEXT_ENABLED: "0"
+      INSIGHT_EDGE_WS_ENABLED: ${INSIGHT_EDGE_WS_ENABLED:-true}
+      INSIGHT_EDGE_WS_SECRET: ${INSIGHT_EDGE_WS_SECRET:-}
+      INSIGHT_TRUSTED_BRIDGE_TOKEN: ${INSIGHT_TRUSTED_BRIDGE_TOKEN:?INSIGHT_TRUSTED_BRIDGE_TOKEN must be set}
+      INSIGHT_CORS_ORIGINS: "${INSIGHT_CORS_ORIGINS:-http://127.0.0.1:5176,http://localhost:5176}"
+      INSIGHT_WX_COMMENT_DATA_ROOT: /mnt/wx_channel/comment_data
+      INSIGHT_JOBS_STATE_PATH: /app/var/jobs-runtime-state.json
+      INSIGHT_DASHBOARD_STORE: postgres
+      INSIGHT_RANKING_STORE: postgres
+      INSIGHT_COMMENT_INSIGHT_STORE: postgres
+      INSIGHT_REPORT_SUMMARY_STORE: postgres
+      INSIGHT_WORKSPACE_STORE: postgres
+      INSIGHT_INGEST_STORE: postgres
+      INSIGHT_MONITORING_STORE: postgres
+      INSIGHT_AI_CONFIG_STORE: postgres
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6}
+      OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-45}
+      INSIGHT_AI_CONFIG_ENCRYPTION_KEY: ${INSIGHT_AI_CONFIG_ENCRYPTION_KEY:?INSIGHT_AI_CONFIG_ENCRYPTION_KEY must be set}
+    ports:
+      - "18081:18081"
+    volumes:
+      - insight_offline_api_var:/app/var
+      - type: bind
+        source: ${INSIGHT_WX_CHANNEL_COMMENT_DATA_DIR:-./data/comment_data}
+        target: /mnt/wx_channel/comment_data
+        read_only: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:18081/api/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - insight_offline_net
+
+  scheduler:
+    image: insight-preview/api:preview
+    container_name: wx_channel_insight_offline_scheduler
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      INSIGHT_SCHEDULER_API_BASE_URL: http://api:18081
+      INSIGHT_SCHEDULER_POLL_INTERVAL: ${INSIGHT_SCHEDULER_POLL_INTERVAL:-15s}
+      INSIGHT_SCHEDULER_REQUEST_TIMEOUT: ${INSIGHT_SCHEDULER_REQUEST_TIMEOUT:-10m}
+      INSIGHT_SCHEDULER_HUB_USER_ID: ${INSIGHT_SCHEDULER_HUB_USER_ID:-insight:operator:local}
+      INSIGHT_SCHEDULER_DEVICE_COUNT: ${INSIGHT_SCHEDULER_DEVICE_COUNT:-1}
+      INSIGHT_SCHEDULER_STRICT: ${INSIGHT_SCHEDULER_STRICT:-true}
+      INSIGHT_SCHEDULER_RUN_ON_START: ${INSIGHT_SCHEDULER_RUN_ON_START:-true}
+      INSIGHT_SCHEDULER_BRIDGE_TOKEN: ${INSIGHT_TRUSTED_BRIDGE_TOKEN:?INSIGHT_TRUSTED_BRIDGE_TOKEN must be set}
+    working_dir: /app
+    entrypoint: ["/app/insight-scheduler"]
+    restart: unless-stopped
+    networks:
+      - insight_offline_net
+
+  web:
+    image: insight-preview/web:preview
+    container_name: wx_channel_insight_offline_web
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      INSIGHT_TRUSTED_BRIDGE_TOKEN: ${INSIGHT_TRUSTED_BRIDGE_TOKEN:?INSIGHT_TRUSTED_BRIDGE_TOKEN must be set}
+      INSIGHT_DEFAULT_HUB_USER_ID: ${INSIGHT_DEFAULT_HUB_USER_ID:-insight:operator:local}
+      INSIGHT_DEFAULT_DEVICE_COUNT: ${INSIGHT_DEFAULT_DEVICE_COUNT:-1}
+      NGINX_ENVSUBST_FILTER: "INSIGHT_TRUSTED_BRIDGE_TOKEN|INSIGHT_DEFAULT_HUB_USER_ID|INSIGHT_DEFAULT_DEVICE_COUNT"
+    ports:
+      - "5176:80"
+    networks:
+      - insight_offline_net
+
+  jobs:
+    image: insight-preview/api:preview
+    container_name: wx_channel_insight_offline_jobs
+    profiles: ["jobs"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      INSIGHT_RUNTIME_PROFILE: team-preview
+      INSIGHT_POSTGRES_DSN: postgres://postgres:${INSIGHT_POSTGRES_PASSWORD:?INSIGHT_POSTGRES_PASSWORD must be set}@postgres:5432/wx_channel_insight?sslmode=disable
+      INSIGHT_REDIS_ADDR: redis:6379
+      INSIGHT_WX_CHANNEL_BASE_URL: ${INSIGHT_WX_CHANNEL_BASE_URL:-http://host.docker.internal:2026}
+      INSIGHT_DEFAULT_HUB_USER_ID: ${INSIGHT_DEFAULT_HUB_USER_ID:-insight:operator:local}
+      INSIGHT_DEFAULT_DEVICE_COUNT: ${INSIGHT_DEFAULT_DEVICE_COUNT:-1}
+      INSIGHT_LOCAL_OPERATOR: "false"
+      INSIGHT_TRUSTED_BRIDGE_TOKEN: ${INSIGHT_TRUSTED_BRIDGE_TOKEN:?INSIGHT_TRUSTED_BRIDGE_TOKEN must be set}
+      INSIGHT_AI_CONFIG_ENCRYPTION_KEY: ${INSIGHT_AI_CONFIG_ENCRYPTION_KEY:?INSIGHT_AI_CONFIG_ENCRYPTION_KEY must be set}
+      INSIGHT_DEMO_CONTEXT_ENABLED: "0"
+      INSIGHT_WX_COMMENT_DATA_ROOT: /mnt/wx_channel/comment_data
+      INSIGHT_DASHBOARD_STORE: postgres
+      INSIGHT_RANKING_STORE: postgres
+      INSIGHT_COMMENT_INSIGHT_STORE: postgres
+      INSIGHT_REPORT_SUMMARY_STORE: postgres
+      INSIGHT_WORKSPACE_STORE: postgres
+      INSIGHT_INGEST_STORE: postgres
+      INSIGHT_MONITORING_STORE: postgres
+      INSIGHT_JOBS_STATE_PATH: /app/var/jobs-runtime-state.json
+    volumes:
+      - insight_offline_api_var:/app/var
+      - type: bind
+        source: ${INSIGHT_WX_CHANNEL_COMMENT_DATA_DIR:-./data/comment_data}
+        target: /mnt/wx_channel/comment_data
+        read_only: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    working_dir: /app
+    entrypoint: ["/app/insight-jobs"]
+    networks:
+      - insight_offline_net
+
+networks:
+  insight_offline_net:
+    name: wx_channel_insight_offline_net
+
+volumes:
+  insight_offline_postgres_data:
+  insight_offline_redis_data:
+  insight_offline_api_var:

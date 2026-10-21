@@ -1,0 +1,223 @@
+name: wx-channel-insight-stack
+
+# Default images use DaoCloud Docker Hub mirror (set INSIGHT_DOCKER_MIRROR empty + override images for docker.io).
+x-mirror: &mirror_prefix "docker.m.daocloud.io/library"
+
+services:
+  postgres:
+    image: ${INSIGHT_POSTGRES_IMAGE:-docker.m.daocloud.io/library/postgres:16-alpine}
+    container_name: wx_channel_insight_stack_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${INSIGHT_POSTGRES_PASSWORD:?INSIGHT_POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: wx_channel_insight
+    ports:
+      - "15432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d wx_channel_insight"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - insight_stack_postgres_data:/var/lib/postgresql/data
+    networks:
+      - insight_net
+
+  redis:
+    image: ${INSIGHT_REDIS_IMAGE:-docker.m.daocloud.io/library/redis:7-alpine}
+    container_name: wx_channel_insight_stack_redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "16379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - insight_stack_redis_data:/data
+    networks:
+      - insight_net
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: deploy/stack/Dockerfile.api
+      args:
+        GO_IMAGE: ${INSIGHT_BUILD_GO_IMAGE:-docker.m.daocloud.io/library/golang:1.25-alpine}
+        RUNTIME_IMAGE: ${INSIGHT_BUILD_RUNTIME_IMAGE:-docker.m.daocloud.io/library/alpine:3.21}
+        GOPROXY: ${INSIGHT_BUILD_GOPROXY:-https://goproxy.cn,direct}
+    image: wx_channel_insight_api:local
+    container_name: wx_channel_insight_stack_migrate
+    restart: "on-failure:5"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      INSIGHT_POSTGRES_DSN: postgres://postgres:${INSIGHT_POSTGRES_PASSWORD:?INSIGHT_POSTGRES_PASSWORD must be set}@postgres:5432/wx_channel_insight?sslmode=disable
+    working_dir: /app
+    entrypoint: ["/app/insight-jobs", "bootstrap-schema"]
+    networks:
+      - insight_net
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/stack/Dockerfile.api
+      args:
+        GO_IMAGE: ${INSIGHT_BUILD_GO_IMAGE:-docker.m.daocloud.io/library/golang:1.25-alpine}
+        RUNTIME_IMAGE: ${INSIGHT_BUILD_RUNTIME_IMAGE:-docker.m.daocloud.io/library/alpine:3.21}
+        GOPROXY: ${INSIGHT_BUILD_GOPROXY:-https://goproxy.cn,direct}
+    image: wx_channel_insight_api:local
+    container_name: wx_channel_insight_stack_api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      INSIGHT_RUNTIME_PROFILE: team-preview
+      INSIGHT_API_ADDR: ":18081"
+      INSIGHT_POSTGRES_DSN: postgres://postgres:${INSIGHT_POSTGRES_PASSWORD:?INSIGHT_POSTGRES_PASSWORD must be set}@postgres:5432/wx_channel_insight?sslmode=disable
+      INSIGHT_REDIS_ADDR: redis:6379
+      INSIGHT_WX_CHANNEL_BASE_URL: ${INSIGHT_WX_CHANNEL_BASE_URL:-http://host.docker.internal:2026}
+      INSIGHT_DEFAULT_HUB_USER_ID: ${INSIGHT_DEFAULT_HUB_USER_ID:-insight:operator:local}
+      INSIGHT_DEFAULT_DEVICE_COUNT: ${INSIGHT_DEFAULT_DEVICE_COUNT:-1}
+      INSIGHT_LOCAL_OPERATOR: "false"
+      INSIGHT_DEMO_CONTEXT_ENABLED: "0"
+      INSIGHT_EDGE_WS_ENABLED: ${INSIGHT_EDGE_WS_ENABLED:-true}
+      INSIGHT_EDGE_WS_SECRET: ${INSIGHT_EDGE_WS_SECRET:-}
+      INSIGHT_TRUSTED_BRIDGE_TOKEN: ${INSIGHT_TRUSTED_BRIDGE_TOKEN:?INSIGHT_TRUSTED_BRIDGE_TOKEN must be set}
+      INSIGHT_CORS_ORIGINS: "${INSIGHT_CORS_ORIGINS:-http://127.0.0.1:5176,http://localhost:5176}"
+      INSIGHT_WX_COMMENT_DATA_ROOT: /mnt/wx_channel/comment_data
+      INSIGHT_JOBS_STATE_PATH: /app/var/jobs-runtime-state.json
+      INSIGHT_DASHBOARD_STORE: postgres
+      INSIGHT_RANKING_STORE: postgres
+      INSIGHT_COMMENT_INSIGHT_STORE: postgres
+      INSIGHT_REPORT_SUMMARY_STORE: postgres
+      INSIGHT_WORKSPACE_STORE: postgres
+      INSIGHT_INGEST_STORE: postgres
+      INSIGHT_MONITORING_STORE: postgres
+      INSIGHT_AI_CONFIG_STORE: postgres
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6}
+      OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-45}
+      INSIGHT_AI_CONFIG_ENCRYPTION_KEY: ${INSIGHT_AI_CONFIG_ENCRYPTION_KEY:?INSIGHT_AI_CONFIG_ENCRYPTION_KEY must be set}
+    ports:
+      - "18081:18081"
+    volumes:
+      - insight_stack_api_var:/app/var
+      - type: bind
+        source: ${INSIGHT_WX_CHANNEL_COMMENT_DATA_DIR:-../../../wx_channel/downloads/comment_data}
+        target: /mnt/wx_channel/comment_data
+        read_only: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:18081/api/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - insight_net
+
+  scheduler:
+    image: wx_channel_insight_api:local
+    container_name: wx_channel_insight_stack_scheduler
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      INSIGHT_SCHEDULER_API_BASE_URL: http://api:18081
+      INSIGHT_SCHEDULER_POLL_INTERVAL: ${INSIGHT_SCHEDULER_POLL_INTERVAL:-15s}
+      INSIGHT_SCHEDULER_REQUEST_TIMEOUT: ${INSIGHT_SCHEDULER_REQUEST_TIMEOUT:-10m}
+      INSIGHT_SCHEDULER_HUB_USER_ID: ${INSIGHT_SCHEDULER_HUB_USER_ID:-${INSIGHT_DEFAULT_HUB_USER_ID:-insight:operator:local}}
+      INSIGHT_SCHEDULER_DEVICE_COUNT: ${INSIGHT_SCHEDULER_DEVICE_COUNT:-${INSIGHT_DEFAULT_DEVICE_COUNT:-1}}
+      INSIGHT_SCHEDULER_STRICT: ${INSIGHT_SCHEDULER_STRICT:-true}
+      INSIGHT_SCHEDULER_RUN_ON_START: ${INSIGHT_SCHEDULER_RUN_ON_START:-true}
+      INSIGHT_SCHEDULER_BRIDGE_TOKEN: ${INSIGHT_TRUSTED_BRIDGE_TOKEN:?INSIGHT_TRUSTED_BRIDGE_TOKEN must be set}
+    working_dir: /app
+    entrypoint: ["/app/insight-scheduler"]
+    restart: unless-stopped
+    networks:
+      - insight_net
+
+  web:
+    build:
+      context: ../..
+      dockerfile: deploy/stack/Dockerfile.web
+      target: prebuilt
+      args:
+        NODE_IMAGE: ${INSIGHT_BUILD_NODE_IMAGE:-docker.m.daocloud.io/library/node:22-alpine}
+        NGINX_IMAGE: ${INSIGHT_BUILD_NGINX_IMAGE:-docker.m.daocloud.io/library/nginx:1.27-alpine}
+    image: wx_channel_insight_web:local
+    container_name: wx_channel_insight_stack_web
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      INSIGHT_TRUSTED_BRIDGE_TOKEN: ${INSIGHT_TRUSTED_BRIDGE_TOKEN:?INSIGHT_TRUSTED_BRIDGE_TOKEN must be set}
+      INSIGHT_DEFAULT_HUB_USER_ID: ${INSIGHT_DEFAULT_HUB_USER_ID:-insight:operator:local}
+      INSIGHT_DEFAULT_DEVICE_COUNT: ${INSIGHT_DEFAULT_DEVICE_COUNT:-1}
+      NGINX_ENVSUBST_FILTER: "INSIGHT_TRUSTED_BRIDGE_TOKEN|INSIGHT_DEFAULT_HUB_USER_ID|INSIGHT_DEFAULT_DEVICE_COUNT"
+    ports:
+      - "5176:80"
+    networks:
+      - insight_net
+
+  jobs:
+    image: wx_channel_insight_api:local
+    container_name: wx_channel_insight_stack_jobs
+    profiles: ["jobs"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      INSIGHT_RUNTIME_PROFILE: team-preview
+      INSIGHT_POSTGRES_DSN: postgres://postgres:${INSIGHT_POSTGRES_PASSWORD:?INSIGHT_POSTGRES_PASSWORD must be set}@postgres:5432/wx_channel_insight?sslmode=disable
+      INSIGHT_REDIS_ADDR: redis:6379
+      INSIGHT_WX_CHANNEL_BASE_URL: ${INSIGHT_WX_CHANNEL_BASE_URL:-http://host.docker.internal:2026}
+      INSIGHT_DEFAULT_HUB_USER_ID: ${INSIGHT_DEFAULT_HUB_USER_ID:-insight:operator:local}
+      INSIGHT_DEFAULT_DEVICE_COUNT: ${INSIGHT_DEFAULT_DEVICE_COUNT:-1}
+      INSIGHT_LOCAL_OPERATOR: "false"
+      INSIGHT_TRUSTED_BRIDGE_TOKEN: ${INSIGHT_TRUSTED_BRIDGE_TOKEN:?INSIGHT_TRUSTED_BRIDGE_TOKEN must be set}
+      INSIGHT_AI_CONFIG_ENCRYPTION_KEY: ${INSIGHT_AI_CONFIG_ENCRYPTION_KEY:?INSIGHT_AI_CONFIG_ENCRYPTION_KEY must be set}
+      INSIGHT_DEMO_CONTEXT_ENABLED: "0"
+      INSIGHT_WX_COMMENT_DATA_ROOT: /mnt/wx_channel/comment_data
+      INSIGHT_DASHBOARD_STORE: postgres
+      INSIGHT_RANKING_STORE: postgres
+      INSIGHT_COMMENT_INSIGHT_STORE: postgres
+      INSIGHT_REPORT_SUMMARY_STORE: postgres
+      INSIGHT_WORKSPACE_STORE: postgres
+      INSIGHT_INGEST_STORE: postgres
+      INSIGHT_MONITORING_STORE: postgres
+      INSIGHT_JOBS_STATE_PATH: /app/var/jobs-runtime-state.json
+    volumes:
+      - insight_stack_api_var:/app/var
+      - type: bind
+        source: ${INSIGHT_WX_CHANNEL_COMMENT_DATA_DIR:-../../../wx_channel/downloads/comment_data}
+        target: /mnt/wx_channel/comment_data
+        read_only: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    working_dir: /app
+    entrypoint: ["/app/insight-jobs"]
+    networks:
+      - insight_net
+
+networks:
+  insight_net:
+    name: wx_channel_insight_stack_net
+
+volumes:
+  insight_stack_postgres_data:
+  insight_stack_redis_data:
+  insight_stack_api_var:

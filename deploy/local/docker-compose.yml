@@ -1,0 +1,38 @@
+# Lightweight local deps only (recommended for Windows dev when full stack image builds are slow).
+# Default images use DaoCloud Docker Hub mirror; override with plain docker.io if needed.
+
+services:
+  postgres:
+    image: ${INSIGHT_POSTGRES_IMAGE:-docker.m.daocloud.io/library/postgres:16-alpine}
+    container_name: wx_channel_insight_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: wx_channel_insight
+    ports:
+      - "15432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d wx_channel_insight"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - insight_postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: ${INSIGHT_REDIS_IMAGE:-docker.m.daocloud.io/library/redis:7-alpine}
+    container_name: wx_channel_insight_redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "16379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - insight_redis_data:/data
+
+volumes:
+  insight_postgres_data:
+  insight_redis_data:

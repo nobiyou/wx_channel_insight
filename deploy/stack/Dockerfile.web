@@ -1,0 +1,37 @@
+# syntax=docker/dockerfile:1.7
+# Override bases via build-args when Docker Hub is slow, e.g.:
+#   --build-arg NODE_IMAGE=docker.m.daocloud.io/library/node:22-alpine
+
+ARG NODE_IMAGE=node:22-alpine
+ARG NGINX_IMAGE=nginx:1.27-alpine
+
+FROM ${NODE_IMAGE} AS builder
+
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+ENV NPM_CONFIG_REGISTRY=${NPM_REGISTRY}
+
+WORKDIR /web
+
+COPY apps/web/package.json apps/web/package-lock.json ./
+RUN npm ci
+
+COPY apps/web/ ./
+RUN npm run build
+
+FROM ${NGINX_IMAGE} AS prebuilt
+
+ENV NGINX_ENVSUBST_FILTER="INSIGHT_TRUSTED_BRIDGE_TOKEN|INSIGHT_DEFAULT_HUB_USER_ID|INSIGHT_DEFAULT_DEVICE_COUNT"
+
+COPY deploy/stack/nginx.conf /etc/nginx/templates/default.conf.template
+COPY apps/web/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+FROM ${NGINX_IMAGE} AS source-built
+
+ENV NGINX_ENVSUBST_FILTER="INSIGHT_TRUSTED_BRIDGE_TOKEN|INSIGHT_DEFAULT_HUB_USER_ID|INSIGHT_DEFAULT_DEVICE_COUNT"
+
+COPY deploy/stack/nginx.conf /etc/nginx/templates/default.conf.template
+COPY --from=builder /web/dist /usr/share/nginx/html
+
+EXPOSE 80

@@ -1,0 +1,44 @@
+{
+  "server": {
+    "addr": "127.0.0.1:18081",
+    "web_static_root": "apps/web/dist",
+    "cors_origins": ["http://127.0.0.1:5176", "http://localhost:5176"]
+  },
+  "runtime": {
+    "profile": "team-preview",
+    "default_hub_user_id": "insight:operator:local",
+    "default_device_count": 1
+  },
+  "storage": {
+    "driver": "postgres",
+    "data_dir": "var",
+    "postgres_dsn": "postgres://insight:CHANGE_ME@127.0.0.1:5432/wx_channel_insight?sslmode=disable"
+  },
+  "redis": {
+    "addr": "",
+    "password": "",
+    "db": 0
+  },
+  "wx_channel": {
+    "base_url": "http://127.0.0.1:2026"
+  },
+  "bridge": {
+    "local_operator": false,
+    "demo_context_enabled": false,
+    "require_trusted_for_live": true,
+    "trusted_token": ""
+  },
+  "edge": {
+    "enabled": false
+  },
+  "openai": {
+    "base_url": "https://api.openai.com/v1",
+    "model": "gpt-5.6",
+    "timeout_seconds": 45
+  },
+  "scheduler": {
+    "api_base_url": "http://127.0.0.1:18081",
+    "poll_interval": "15s",
+    "request_timeout": "10m"
+  }
+}

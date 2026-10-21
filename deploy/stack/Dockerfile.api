@@ -1,0 +1,59 @@
+# syntax=docker/dockerfile:1.7
+# Override bases via build-args when Docker Hub is slow, e.g.:
+#   --build-arg GO_IMAGE=docker.m.daocloud.io/library/golang:1.25-alpine
+
+ARG GO_IMAGE=golang:1.25-alpine
+ARG RUNTIME_IMAGE=alpine:3.21
+
+FROM ${GO_IMAGE} AS builder
+
+ARG GOPROXY=https://goproxy.cn,direct
+ARG ALPINE_REPOSITORY=https://mirrors.aliyun.com/alpine
+ENV GOPROXY=${GOPROXY}
+
+WORKDIR /src
+
+RUN sed -i "s#https://dl-cdn.alpinelinux.org/alpine#${ALPINE_REPOSITORY}#g" /etc/apk/repositories \
+ && apk add --no-cache ca-certificates
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY apps ./apps
+COPY internal ./internal
+COPY migrations ./migrations
+
+ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+     go build -trimpath -ldflags="-s -w" -o /out/insight-api ./apps/api \
+  && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath -ldflags="-s -w" -o /out/insight-jobs ./apps/jobs \
+ && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath -ldflags="-s -w" -o /out/insight-scheduler ./apps/scheduler
+
+FROM ${RUNTIME_IMAGE}
+
+ARG ALPINE_REPOSITORY=https://mirrors.aliyun.com/alpine
+
+WORKDIR /app
+
+RUN sed -i "s#https://dl-cdn.alpinelinux.org/alpine#${ALPINE_REPOSITORY}#g" /etc/apk/repositories \
+ && apk add --no-cache ca-certificates tzdata wget \
+ && adduser -D -H -u 10001 insight
+
+COPY --from=builder /out/insight-api /app/insight-api
+COPY --from=builder /out/insight-jobs /app/insight-jobs
+COPY --from=builder /out/insight-scheduler /app/insight-scheduler
+COPY LICENSE /app/LICENSE
+COPY --from=builder /src/migrations/postgres /app/migrations/postgres
+
+RUN mkdir -p /app/var && chown -R insight:insight /app
+
+USER insight
+
+ENV INSIGHT_API_ADDR=:18081 \
+    INSIGHT_RUNTIME_PROFILE=team-preview \
+    INSIGHT_JOBS_STATE_PATH=/app/var/jobs-runtime-state.json
+
+EXPOSE 18081
+
+ENTRYPOINT ["/app/insight-api"]

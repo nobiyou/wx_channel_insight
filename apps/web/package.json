@@ -1,0 +1,21 @@
+{
+  "name": "wx-channel-insight-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5176",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4176",
+    "test": "node --test src/lib/*.test.js"
+  },
+  "dependencies": {
+    "lucide-vue-next": "^0.577.0",
+    "naive-ui": "^2.44.1",
+    "vue": "^3.5.24"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.1",
+    "vite": "^7.2.4"
+  }
+}

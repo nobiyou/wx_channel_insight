@@ -1,0 +1,52 @@
+name: Feature Request
+description: Propose a new capability for wx_channel_insight
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What outcome do we want?
+      placeholder: Describe the user or operator outcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What current gap or friction are we solving?
+      placeholder: Describe the current limitation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Direction
+      description: A rough proposal is enough.
+      placeholder: Suggested UI, API, data, or workflow changes.
+
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Success Signal
+      description: How will we know this helped?
+      placeholder: Example metrics, operator outcomes, or workflow improvements.
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies Or Inputs
+      description: Mention any dependency on Hub auth, upstream ingest, or data contracts.
+      placeholder: Upstream dependency or open question.
+
+  - type: checkboxes
+    id: boundary
+    attributes:
+      label: Boundary Check
+      options:
+        - label: This proposal keeps analytics, aggregation, and reporting owner in wx_channel_insight
+        - label: This proposal does not require direct analytical reads from Hub SQLite
