@@ -38,6 +38,8 @@ func (s *server) handleDataCenter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
+	case len(parts) == 2 && parts[1] == "export" && entity == insight.DataCenterEntityVideos && r.Method == http.MethodPost:
+		s.handleVideoExport(w, r, query)
 	case len(parts) == 3 && parts[2] == "curation" && entity == insight.DataCenterEntityVideos && r.Method == http.MethodGet:
 		id, err := url.PathUnescape(parts[1])
 		if err != nil || !strings.HasPrefix(id, "video:") {

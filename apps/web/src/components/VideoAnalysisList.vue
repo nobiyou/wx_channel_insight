@@ -1,8 +1,8 @@
 <script setup>
 import { computed, onUnmounted, ref, shallowRef, useId, watch } from 'vue';
 import { NAlert, NEmpty, NSpin } from 'naive-ui';
-import { ArrowUpRight, BookmarkCheck, ChevronLeft, ChevronRight, RefreshCw, SlidersHorizontal } from 'lucide-vue-next';
-import { curateVideos, fetchDataCenter, importWXVideoShare } from '../lib/api.js';
+import { ArrowUpRight, BookmarkCheck, ChevronLeft, ChevronRight, Download, RefreshCw, SlidersHorizontal } from 'lucide-vue-next';
+import { curateVideos, exportVideoTable, fetchDataCenter, importWXVideoShare } from '../lib/api.js';
 import { buildOperationsHash, videoFactsQuery } from '../lib/operationsNavigation.js';
 import { videoGrowthLabel } from '../lib/videoFactsPresentation.js';
 import { formatDecimal } from '../lib/numberFormatting.js';
@@ -17,6 +17,10 @@ const query = ref(videoFactsQuery(props.initialParams, props.mode));
 const pageData = shallowRef({ items: [], total: 0, totalPages: 1 });
 const loading = ref(false); const error = ref(''); const notice = ref('');
 const backgroundLoading = ref(false);
+const appliedQuery = shallowRef(null);
+const exportScope = ref('');
+const exportFeedback = ref(null);
+let exportController;
 const shareURL = ref(''); const importBusy = ref(false); const mutationBusy = ref(false);
 const selectedIDs = ref([]); const editorOpen = ref(false); const editorVideos = ref([]);
 let requestID = 0;
@@ -25,7 +29,7 @@ const rows = computed(() => pageData.value.items || []);
 const selectedSet = computed(() => new Set(selectedIDs.value));
 const selectedRows = computed(() => rows.value.filter(row => selectedSet.value.has(row.id)));
 const allSelected = computed(() => rows.value.length > 0 && selectedRows.value.length === rows.value.length);
-const busy = computed(() => loading.value || mutationBusy.value);
+const busy = computed(() => loading.value || mutationBusy.value || Boolean(exportScope.value));
 const currentPreset = computed(() => activeDiscoveryPreset(query.value));
 const discoveryPresets = computed(() => VIDEO_DISCOVERY_PRESETS.filter(preset => preset.key !== 'keyword_hot' || query.value.monitorKeyword || props.keyword));
 const ranksByRow = computed(() => {
@@ -64,6 +68,7 @@ function currentHash() {
   return buildOperationsHash(props.routeView || props.mode, { ...props.routeParams, ...params, keyword: monitorKeyword });
 }
 async function load({ updateHash = false, refresh = false, background = false } = {}) {
+  exportController?.abort(); exportFeedback.value = null;
   if (props.mode === 'keywords' && !props.keyword) return;
   if (query.value.from && query.value.to && query.value.from > query.value.to) { error.value = '采集起始日期不能晚于截止日期。'; return; }
   if (query.value.publishedFrom && query.value.publishedTo && query.value.publishedFrom > query.value.publishedTo) { error.value = '发布时间起始日期不能晚于截止日期。'; return; }
@@ -74,10 +79,12 @@ async function load({ updateHash = false, refresh = false, background = false } 
   if (props.scopeAccount) query.value.account = props.scopeAccount;
   if (updateHash) window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${currentHash()}`);
   loading.value = !background; backgroundLoading.value = background; error.value = '';
+  const requestQuery = { ...query.value, refresh, from: query.value.from ? `${query.value.from}T00:00:00+08:00` : '', to: query.value.to ? `${query.value.to}T23:59:59.999999999+08:00` : '', publishedFrom: query.value.publishedFrom ? `${query.value.publishedFrom}T00:00:00+08:00` : '', publishedTo: query.value.publishedTo ? `${query.value.publishedTo}T23:59:59.999999999+08:00` : '' };
   try {
-    const payload = await fetchDataCenter('videos', { ...query.value, refresh, from: query.value.from ? `${query.value.from}T00:00:00+08:00` : '', to: query.value.to ? `${query.value.to}T23:59:59.999999999+08:00` : '', publishedFrom: query.value.publishedFrom ? `${query.value.publishedFrom}T00:00:00+08:00` : '', publishedTo: query.value.publishedTo ? `${query.value.publishedTo}T23:59:59.999999999+08:00` : '' }, { signal: requestController.signal });
+    const payload = await fetchDataCenter('videos', requestQuery, { signal: requestController.signal });
     if (id !== requestID) return;
     pageData.value = payload;
+    appliedQuery.value = requestQuery;
     query.value.page = Number(payload.page) || query.value.page;
     selectedIDs.value = selectedIDs.value.filter(key => payload.items?.some(row => row.id === key));
   } catch (cause) {
@@ -98,6 +105,26 @@ function page(value) { query.value.page = value; selectedIDs.value = []; load({ 
 function togglePage() { selectedIDs.value = allSelected.value ? [] : rows.value.map(row => row.id); }
 function openVideo(video) { emit('open-video', { video, returnHash: currentHash() }); }
 function edit(videos) { editorVideos.value = videos; editorOpen.value = true; }
+async function exportVideos(scope) {
+  if (busy.value || backgroundLoading.value || !appliedQuery.value || (scope === 'selected' && !selectedRows.value.length)) return;
+  exportScope.value = scope; error.value = ''; notice.value = '';
+  exportFeedback.value = { tone: 'info', text: '正在生成 CSV…' };
+  exportController = new AbortController();
+  try {
+    const { blob, filename } = await exportVideoTable(appliedQuery.value, { scope, ids: scope === 'selected' ? [...selectedIDs.value] : [], signal: exportController.signal });
+    if (exportController.signal.aborted) return;
+    const url = URL.createObjectURL(blob);
+    try {
+      const link = document.createElement('a');
+      link.href = url; link.download = filename; link.hidden = true;
+      document.body.appendChild(link);
+      try { link.click(); } finally { link.remove(); }
+    } finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    exportFeedback.value = { tone: 'success', text: 'CSV 导出文件已生成，可用 Excel 或 WPS 打开。' };
+  } catch (cause) {
+    if (cause?.name !== 'AbortError') exportFeedback.value = { tone: 'error', text: `导出失败：${cause.message}。请重试，当前筛选和勾选已保留。` };
+  } finally { exportScope.value = ''; }
+}
 async function edited(count) { notice.value = `已保存 ${count} 条视频的运营标记。`; await load(); }
 async function mark(videos, status) {
   if (busy.value || !videos.length) return;
@@ -117,11 +144,12 @@ async function importVideo() {
   finally { importBusy.value = false; }
 }
 watch([() => props.keyword, () => props.initialParams], () => {
+  appliedQuery.value = null;
   query.value = videoFactsQuery(props.initialParams, props.mode);
   if (props.mode === 'keywords' && props.initialParams.keyword !== props.keyword) query.value.page = 1;
   selectedIDs.value = []; load();
 }, { immediate: true });
-onUnmounted(() => { requestID++; requestController?.abort(); });
+onUnmounted(() => { requestID++; requestController?.abort(); exportController?.abort(); });
 defineExpose({ refresh: (options = {}) => {
   if (busy.value || backgroundLoading.value || editorOpen.value || selectedIDs.value.length) return;
   return load({ refresh: !options.background, background: !!options.background });
@@ -151,7 +179,8 @@ defineExpose({ refresh: (options = {}) => {
         <p>按该词命中视频的累计互动比较，显示名次、完整样本数和历史状态。<span v-if="query.to">当前为截至 {{ query.to }} 的样本回看。</span></p><details><summary>查看比较范围</summary><p>采用所选采集时间范围内的完整样本，至少 5 条才排名。名次在搜索、账号、发布日期、运营标记筛选和翻页前计算；并列同名次。累计互动未校正账号规模和发布龄，不代表关键词全站热度。</p></details>
         <button v-if="currentPreset !== 'keyword_hot'" type="button" class="operations-text-button" :disabled="busy" @click="choosePreset('keyword_hot')">按关键词累计互动查看<ArrowUpRight :size="13" /></button>
       </div>
-      <div class="ops-result-head"><div><h3>{{ query.curation === 'excluded' ? '已排除内容 · 随时可恢复' : query.curation === 'selected' ? '精选内容库' : '内容评估与管理' }}</h3><p>匹配 {{ metric(pageData.total) }} 条 · 分析覆盖全部匹配结果，列表每页 {{ query.pageSize }} 条<span v-if="backgroundLoading" class="operations-updated" role="status">正在后台更新…</span></p></div><label><span class="sr-only">每页显示条数</span><select v-model.number="query.pageSize" :disabled="busy" @change="search"><option :value="20">20 条 / 页</option><option :value="50">50 条 / 页</option></select></label></div>
+      <div class="ops-result-head"><div><h3>{{ query.curation === 'excluded' ? '已排除内容 · 随时可恢复' : query.curation === 'selected' ? '精选内容库' : '内容评估与管理' }}</h3><p>匹配 {{ metric(pageData.total) }} 条 · 分析覆盖全部匹配结果，列表每页 {{ query.pageSize }} 条<span v-if="backgroundLoading" class="operations-updated" role="status">正在后台更新…</span></p></div><div class="ops-result-actions"><button class="tool-button secondary" type="button" :disabled="busy || backgroundLoading || !appliedQuery || !pageData.total" :aria-busy="exportScope === 'filtered'" title="导出当前筛选和排序下的全部结果，CSV 可用 Excel 或 WPS 打开" @click="exportVideos('filtered')"><Download :size="15" aria-hidden="true" />{{ exportScope === 'filtered' ? '正在导出…' : '导出全部筛选结果' }}</button><label><span class="sr-only">每页显示条数</span><select v-model.number="query.pageSize" :disabled="busy" @change="search"><option :value="20">20 条 / 页</option><option :value="50">50 条 / 页</option></select></label></div></div>
+      <p v-if="exportFeedback && !selectedRows.length" class="ops-export-feedback" :data-tone="exportFeedback.tone" :role="exportFeedback.tone === 'error' ? 'alert' : 'status'">{{ exportFeedback.text }}</p>
       <div v-if="loading && !rows.length" class="account-detail-loading"><n-spin size="medium" /><span>正在读取并分析已采集视频…</span></div>
       <n-empty v-else-if="!rows.length" description="当前条件下没有内容，可调整筛选或切换内容库"><template #extra><button type="button" class="tool-button secondary" :disabled="busy" @click="resetFilters">清除筛选</button></template></n-empty>
       <div v-else class="analysis-table-wrap"><table class="analysis-table ops-video-table"><thead><tr><th class="ops-select-cell"><input type="checkbox" :checked="allSelected" :indeterminate="selectedRows.length > 0 && !allSelected" :disabled="busy" aria-label="选择本页全部视频" @change="togglePage" /></th><th>视频与运营标记</th><th>互动与增长</th><th>表现判断</th><th>发布与采集</th><th>运营操作</th></tr></thead><tbody><tr v-for="row in rows" :key="row.id" :class="{ 'ops-row-selected': selectedIDs.includes(row.id), 'ops-row-excluded': row.curation?.status === 'excluded' }"><td class="ops-select-cell"><input v-model="selectedIDs" type="checkbox" :value="row.id" :disabled="busy" :aria-label="`选择视频：${row.title || row.objectId}`" /></td><td class="ops-video-title-cell"><div class="ops-video-identity"><img v-if="row.coverUrl" :src="row.coverUrl" alt="" loading="lazy" referrerpolicy="no-referrer" @error="$event.target.style.display = 'none'" /><div><button type="button" class="analysis-title-button ops-video-title" :title="row.title" :disabled="!row.objectId" @click="openVideo(row)">{{ row.title || '未命名视频' }}</button><button type="button" class="operations-text-button ops-video-author" :disabled="!row.channelUsername" @click="emit('open-account', row)">{{ row.channelName || row.channelUsername || '账号待确认' }}<ArrowUpRight :size="12" /></button></div></div><div class="ops-video-tags"><span class="ops-curation-badge" :data-status="row.curation?.status">{{ curationLabel(row.curation?.status) }}</span><span v-for="tag in row.curation?.tags" :key="tag" class="ops-content-tag">{{ tag }}</span><span v-for="sourceKeyword in row.sourceKeywords" :key="`source-${sourceKeyword}`" class="ops-source-tag"># {{ sourceKeyword }}</span></div><p v-if="row.curation?.note" class="ops-video-note">{{ row.curation.note }}</p><small class="ops-video-id">ID {{ row.objectId || '未记录' }}</small></td><td><strong class="ops-interaction-total">{{ metric(row.performance?.interactions) }}<small> 总互动</small></strong><div class="ops-metric-pairs"><span>赞 {{ metric(row.likes) }}</span><span>评 {{ metric(row.comments) }}</span><span>藏 {{ metric(row.favorites) }}</span><span>转 {{ metric(row.forwards) }}</span></div><div class="ops-growth-evidence" :title="growthWindow(row)"><strong v-if="row.performance?.growthPerHour !== null && row.performance?.growthPerHour !== undefined">+{{ metric(row.performance.growthPerHour) }} / 小时</strong><span v-else>{{ videoGrowthLabel(row) }}</span><small>{{ row.observationCount || 0 }} 次观察 · {{ row.performance?.growthPerHour != null ? '最近两次可比观察' : '查看详情了解增长依据' }}</small></div></td><td class="ops-performance-cell">
@@ -161,7 +190,7 @@ defineExpose({ refresh: (options = {}) => {
         </td><td class="ops-video-time"><span>发布 {{ date(row.publishedAt) }}</span><span>采集 {{ date(row.observedAt) }}</span><span v-if="row.performance?.freshness === 'stale'" class="ops-stale-label">数据待更新</span></td><td><div class="ops-row-actions"><button class="ops-mark-button" :class="{ active: row.curation?.status === 'selected' }" type="button" :disabled="busy" :aria-label="`精选视频：${row.title || row.objectId}`" @click="mark([row], 'selected')"><BookmarkCheck :size="13" />精选</button><button class="ops-mark-button" type="button" :disabled="busy" @click="mark([row], 'watching')">观察</button><button v-if="row.curation?.status !== 'excluded'" class="ops-mark-button" type="button" :disabled="busy" @click="mark([row], 'excluded')">排除</button><button v-else class="ops-mark-button" type="button" :disabled="busy" @click="mark([row], 'unreviewed')">恢复</button><button class="ops-mark-button" type="button" :disabled="busy" @click="edit([row])">标签备注</button><button class="operations-text-button" type="button" :disabled="!row.objectId" @click="openVideo(row)">趋势与评论<ArrowUpRight :size="13" /></button></div></td></tr></tbody></table></div>
       <footer v-if="pageData.total" class="data-center-pagination"><span>显示 {{ pageStart }}–{{ pageEnd }}，共 {{ metric(pageData.total) }} 条</span><div class="data-center-pagination-controls"><button class="analysis-icon-button" type="button" aria-label="上一页" :disabled="query.page <= 1 || busy" @click="page(query.page - 1)"><ChevronLeft :size="16" /></button><strong>第 {{ query.page }} / {{ pageData.totalPages || 1 }} 页</strong><button class="analysis-icon-button" type="button" aria-label="下一页" :disabled="query.page >= pageData.totalPages || busy" @click="page(query.page + 1)"><ChevronRight :size="16" /></button></div></footer>
     </section>
-    <div v-if="selectedRows.length" class="ops-batch-bar" role="region" aria-label="批量管理所选视频"><strong>已选 {{ selectedRows.length }} 条</strong><button type="button" :disabled="busy" @click="mark(selectedRows, 'selected')">加入精选</button><button type="button" :disabled="busy" @click="mark(selectedRows, 'watching')">待观察</button><button type="button" :disabled="busy" @click="mark(selectedRows, 'excluded')">排除</button><button type="button" :disabled="busy" @click="mark(selectedRows, 'unreviewed')">恢复未处理</button><button type="button" :disabled="busy" @click="edit(selectedRows)">批量标签</button><button type="button" :disabled="busy" @click="selectedIDs = []">取消选择</button><span v-if="mutationBusy" role="status">正在保存…</span></div>
+    <div v-if="selectedRows.length" class="ops-batch-bar" role="region" aria-label="批量管理所选视频"><strong>已选 {{ selectedRows.length }} 条</strong><button type="button" :disabled="busy || backgroundLoading" :aria-busy="exportScope === 'selected'" title="将勾选视频导出为 CSV 表格" @click="exportVideos('selected')">{{ exportScope === 'selected' ? '正在导出…' : '导出勾选视频' }}</button><button type="button" :disabled="busy" @click="mark(selectedRows, 'selected')">加入精选</button><button type="button" :disabled="busy" @click="mark(selectedRows, 'watching')">待观察</button><button type="button" :disabled="busy" @click="mark(selectedRows, 'excluded')">排除</button><button type="button" :disabled="busy" @click="mark(selectedRows, 'unreviewed')">恢复未处理</button><button type="button" :disabled="busy" @click="edit(selectedRows)">批量标签</button><button type="button" :disabled="busy" @click="selectedIDs = []">取消选择</button><span v-if="mutationBusy" role="status">正在保存…</span><p v-if="exportFeedback" class="ops-export-feedback" :data-tone="exportFeedback.tone" :role="exportFeedback.tone === 'error' ? 'alert' : 'status'">{{ exportFeedback.text }}</p></div>
     <VideoCurationEditor v-model:show="editorOpen" :videos="editorVideos" @saved="edited" />
     <details v-if="mode === 'videos'" class="analysis-surface ops-import-video"><summary>采集单条视频数据</summary><p>填写原视频分享链接，采集互动数据后进入分析。</p><form class="operations-filter-form" @submit.prevent="importVideo"><label><span>原视频分享链接</span><input v-model="shareURL" type="url" required placeholder="https://…" /></label><button class="tool-button primary" :disabled="importBusy" type="submit">{{ importBusy ? '采集中…' : '采集视频数据' }}</button></form></details>
   </section>

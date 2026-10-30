@@ -279,6 +279,25 @@ export async function curateVideos(patch) {
 	return accountJSON("/api/v1/read-models/data-center/videos/curation", {method:"POST",body:patch});
 }
 
+export async function exportVideoTable(query = {}, { scope = 'filtered', ids = [], signal } = {}) {
+  const { page, pageSize, refresh, ...filters } = query;
+  const path = buildAPIURLWithQuery('/api/v1/read-models/data-center/videos/export', filters);
+  const response = await fetch(path, {
+    method: 'POST',
+    cache: 'no-store',
+    headers: { ...buildRequestHeaders(path), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope, ids }),
+    ...(signal ? { signal } : {}),
+  });
+  if (!response.ok) throw await buildAPIError(response);
+  if (!response.headers.get('content-type')?.toLowerCase().startsWith('text/csv')) {
+    throw new Error('导出文件格式异常，请重试');
+  }
+  const disposition = response.headers.get('content-disposition') || '';
+  const filename = disposition.match(/filename="?([a-zA-Z0-9._-]+\.csv)"?(?:;|$)/i)?.[1] || 'insight-videos.csv';
+  return { blob: await response.blob(), filename };
+}
+
 export async function fetchVideoCuration(videoID) {
   return accountJSON(`/api/v1/read-models/data-center/videos/${encodeURIComponent(videoID)}/curation`);
 }
