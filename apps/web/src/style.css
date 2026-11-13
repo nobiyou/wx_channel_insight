@@ -5066,6 +5066,11 @@ body {
 .monitoring-center-stat-card > small { color: var(--analytics-subtle); font-size: 11px; }
 .monitoring-center-stat-card[data-tone="good"] > strong { color: #127451; }
 .monitoring-center-stat-card[data-tone="warn"] > strong { color: #9b6a20; }
+.monitoring-center-scope-metrics { display: flex; align-items: center; gap: 11px; }
+.monitoring-center-scope-metrics > div { display: grid; gap: 4px; }
+.monitoring-center-scope-metrics strong { color: var(--analytics-ink); font-size: 26px; line-height: 1; font-variant-numeric: tabular-nums; }
+.monitoring-center-scope-metrics small { color: var(--analytics-subtle); font-size: 11px; }
+.monitoring-center-scope-metrics > span { color: #b4bfcc; font-size: 18px; }
 
 .monitoring-center-info-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 12px; }
 .monitoring-center-info-card { min-width: 0; padding: 18px 20px; border: 1px solid var(--analytics-line); border-radius: 11px; background: #fff; }
@@ -5096,6 +5101,10 @@ body {
 .monitoring-center-recent-list li { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-top: 1px solid var(--analytics-line-soft); }
 .monitoring-center-recent-list li:first-child { border-top: 0; }
 .monitoring-center-recent-list li > div { display: grid; gap: 3px; min-width: 0; }
+.monitoring-center-recent-item { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 0; border: 0; color: inherit; text-align: left; background: transparent; cursor: pointer; }
+.monitoring-center-recent-item:hover strong, .monitoring-center-recent-item:focus-visible strong { color: #1769d5; }
+.monitoring-center-recent-item:focus-visible { outline: 2px solid #6b9ff0; outline-offset: 3px; border-radius: 4px; }
+.monitoring-center-recent-item > span:last-child { display: grid; gap: 3px; min-width: 0; }
 .monitoring-center-recent-list strong { color: var(--analytics-ink); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .monitoring-center-recent-list span:not(.monitoring-center-recent-dot) { color: var(--analytics-muted); font-size: 11px; }
 

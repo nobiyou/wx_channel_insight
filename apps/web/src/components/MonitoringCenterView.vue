@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { Activity, CheckCircle2, Clock3, Radio, RefreshCw, ShieldAlert, Video } from "lucide-vue-next";
 import { NAlert, NButton, NIcon } from "naive-ui";
 import MonitoringTasksPanel from "./MonitoringTasksPanel.vue";
-import { fetchMonitoringHealth, fetchMonitoringTasks } from "../lib/api.js";
+import { fetchMonitoringHealth } from "../lib/api.js";
 import {
   formatMonitoringTime,
   monitoringRunStatusLabel,
@@ -16,6 +16,7 @@ const props = defineProps({
 });
 
 const taskPanel = ref(null);
+const taskPanelHost = ref(null);
 const tasks = ref([]);
 const health = ref(null);
 const loading = ref(false);
@@ -61,13 +62,16 @@ function formatUpdated(value) {
   return value ? formatMonitoringTime(value, "刚刚") : "等待首次读取";
 }
 
-async function load() {
+async function load({ refreshTasks = true } = {}) {
   if (loading.value) return;
   loading.value = true;
   error.value = "";
-  const results = await Promise.allSettled([fetchMonitoringTasks(), fetchMonitoringHealth()]);
+  const taskRead = refreshTasks
+    ? taskPanel.value?.refresh?.()
+    : Promise.resolve(taskPanel.value?.getTasks?.() || tasks.value);
+  const results = await Promise.allSettled([taskRead, fetchMonitoringHealth()]);
   if (results[0].status === "fulfilled") {
-    tasks.value = Array.isArray(results[0].value?.items) ? results[0].value.items : [];
+    tasks.value = Array.isArray(results[0].value) ? results[0].value : [];
   } else {
     error.value = results[0].reason instanceof Error ? results[0].reason.message : "监控任务读取失败";
   }
@@ -81,11 +85,17 @@ async function load() {
 }
 
 async function refreshAll() {
-  await Promise.allSettled([load(), taskPanel.value?.refresh?.()]);
+  await load();
 }
 
 async function changed() {
-  await load();
+  tasks.value = taskPanel.value?.getTasks?.() || tasks.value;
+  await load({ refreshTasks: false });
+}
+
+async function selectRecentTask(taskID) {
+  await taskPanel.value?.selectTask?.(taskID);
+  taskPanelHost.value?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 onMounted(load);
@@ -119,7 +129,7 @@ defineExpose({ refresh: refreshAll });
       <article class="monitoring-center-stat-card"><span><CheckCircle2 :size="16" aria-hidden="true" />启用任务</span><strong>{{ enabledTasks.length }}</strong><small>按周期自动采集</small></article>
       <article class="monitoring-center-stat-card"><span><Clock3 :size="16" aria-hidden="true" />正在运行</span><strong>{{ runningTasks.length }}</strong><small>避免重复执行</small></article>
       <article class="monitoring-center-stat-card" :data-tone="attentionCount ? 'warn' : 'good'"><span><ShieldAlert :size="16" aria-hidden="true" />需要处理</span><strong>{{ attentionCount }}</strong><small>{{ attentionCount ? `${health?.failedTasks || 0} 个失败 · ${health?.overdueTasks || 0} 个逾期` : '没有失败或逾期任务' }}</small></article>
-      <article class="monitoring-center-stat-card"><span><Video :size="16" aria-hidden="true" />监控范围</span><strong>{{ targetCount }}</strong><small>{{ coverageCount }} 个来源有覆盖记录</small></article>
+      <article class="monitoring-center-stat-card"><span><Video :size="16" aria-hidden="true" />监控范围</span><div class="monitoring-center-scope-metrics"><div><strong>{{ targetCount }}</strong><small>已配置目标</small></div><span>/</span><div><strong>{{ coverageCount }}</strong><small>已覆盖来源</small></div></div></article>
     </div>
 
     <div class="monitoring-center-info-grid">
@@ -140,14 +150,18 @@ defineExpose({ refresh: refreshAll });
         <div class="monitoring-center-info-head"><div><div class="analysis-section-label">最近活动</div><h3>任务运行状态</h3></div><span class="monitoring-center-info-count">{{ recentTasks.length }} 条</span></div>
         <ul v-if="recentTasks.length" class="monitoring-center-recent-list">
           <li v-for="task in recentTasks" :key="task.id">
-            <span class="monitoring-center-recent-dot" :data-tone="monitoringStatusTone(task.lastStatus || task.status)"></span>
-            <div><strong>{{ task.name }}</strong><span>{{ task.lastStatus ? monitoringRunStatusLabel(task.lastStatus) : monitoringTaskStatusLabel(task.status) }} · {{ formatUpdated(task.lastRunAt || task.updatedAt) }}</span></div>
+            <button class="monitoring-center-recent-item" type="button" @click="selectRecentTask(task.id)">
+              <span class="monitoring-center-recent-dot" :data-tone="monitoringStatusTone(task.lastStatus || task.status)"></span>
+              <span><strong>{{ task.name }}</strong><span>{{ task.lastStatus ? monitoringRunStatusLabel(task.lastStatus) : monitoringTaskStatusLabel(task.status) }} · {{ formatUpdated(task.lastRunAt || task.updatedAt) }}</span></span>
+            </button>
           </li>
         </ul>
         <p v-else class="monitoring-center-empty">还没有运行记录。创建任务后，运行结果会出现在这里。</p>
       </section>
     </div>
 
-    <MonitoringTasksPanel ref="taskPanel" scope="center" :binding-states="props.bindingStates" @changed="changed" />
+    <div ref="taskPanelHost">
+      <MonitoringTasksPanel ref="taskPanel" :auto-load="false" scope="center" :binding-states="props.bindingStates" @changed="changed" />
+    </div>
   </section>
 </template>

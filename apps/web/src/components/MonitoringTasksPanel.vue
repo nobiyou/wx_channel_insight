@@ -59,6 +59,7 @@ import {
 
 const props = defineProps({
   scope: { type: String, default: "diagnostics" },
+  autoLoad: { type: Boolean, default: true },
   targetKey: { type: String, default: "" },
   targetAliases: { type: Array, default: () => [] },
   initialTaskId: { type: String, default: "" },
@@ -263,7 +264,7 @@ async function loadTasks({ keepSelection = true } = {}) {
   loading.value = true;
   try {
     const payload = await fetchMonitoringTasks(includeArchived.value);
-    if (request !== tasksRequest) return;
+    if (request !== tasksRequest) return tasks.value;
     tasks.value = monitoringTasksForScope(Array.isArray(payload?.items) ? payload.items : [], props.scope, props.targetKey, props.targetAliases);
     const nextSelectedID = keepSelection && tasks.value.some((task) => task.id === selectedTaskID.value)
       ? selectedTaskID.value
@@ -284,6 +285,7 @@ async function loadTasks({ keepSelection = true } = {}) {
   } finally {
     if (request === tasksRequest) loading.value = false;
   }
+  return tasks.value;
 }
 
 async function loadRuns(taskID = selectedTaskID.value) {
@@ -512,8 +514,8 @@ watch(
   },
 );
 
-onMounted(() => loadTasks({ keepSelection: false }));
-defineExpose({ refresh: loadTasks, openCreate: openCreateEditor });
+onMounted(() => { if (props.autoLoad) void loadTasks({ keepSelection: false }); });
+defineExpose({ refresh: loadTasks, openCreate: openCreateEditor, selectTask, getTasks: () => tasks.value });
 </script>
 
 <template>
