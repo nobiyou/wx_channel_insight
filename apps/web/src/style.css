@@ -5165,15 +5165,13 @@ body {
   letter-spacing: .04em;
 }
 
-.platform-account-hero-copy h3,
-.platform-account-card h3 {
+.platform-account-hero-copy h3 {
   margin: 5px 0 6px;
   color: #14243d;
   font-size: 21px;
 }
 
-.platform-account-hero-copy p,
-.platform-account-card p {
+.platform-account-hero-copy p {
   margin: 0;
   color: #617189;
   line-height: 1.6;
@@ -5257,71 +5255,65 @@ body {
   font-size: 12px;
 }
 
-.platform-account-grid {
+.platform-account-summary {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, .8fr);
+  overflow: hidden;
+  border: 1px solid #d7e1ef;
+  border-radius: 16px;
+  background: #d7e1ef;
 }
 
-.platform-account-card {
-  min-height: 190px;
+.platform-account-summary-item {
+  min-height: 108px;
+  padding: 18px 20px;
+  background: #fff;
 }
 
-.platform-account-card-head {
+.platform-account-summary-item + .platform-account-summary-item {
+  border-left: 1px solid #d7e1ef;
+}
+
+.platform-account-summary-value {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 18px;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 8px;
+  color: #172942;
+  font-size: 19px;
 }
 
-.platform-account-card-head h3 {
-  margin-bottom: 0;
+.platform-account-summary-value span {
+  color: #617189;
+  font-size: 13px;
 }
 
-.platform-account-state-icon {
-  width: 22px;
-  height: 22px;
-}
-
-.platform-account-state-icon.good {
-  color: #07825a;
-}
-
-.platform-account-state-icon.muted {
-  color: #8995a5;
-}
-
-.platform-account-details {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin: 0;
-}
-
-.platform-account-details dt {
+.platform-account-summary-item small {
+  display: block;
+  margin-top: 7px;
+  overflow-wrap: anywhere;
   color: #8995a5;
   font-size: 12px;
 }
 
-.platform-account-details dd {
-  margin: 5px 0 0;
-  overflow-wrap: anywhere;
-  color: #172942;
-  font-weight: 600;
+.platform-account-status-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #aab3c1;
 }
 
-.platform-account-card-count {
-  color: #087f56;
-  font-size: 28px;
-  font-weight: 700;
+.platform-account-status-dot[data-tone="good"] {
+  background: #07825a;
+  box-shadow: 0 0 0 4px #d9f4e8;
 }
 
 .platform-account-link {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  margin-top: 26px;
+  margin-top: 8px;
   padding: 0;
   border: 0;
   color: #1769d5;
@@ -5400,10 +5392,6 @@ body {
     padding-left: 70px;
   }
 
-  .platform-account-grid {
-    grid-template-columns: 1fr;
-  }
-
   .platform-account-login-card {
     align-items: flex-start;
     flex-direction: column;
@@ -5419,7 +5407,12 @@ body {
     padding-left: 0;
   }
 
-  .platform-account-details {
+  .platform-account-summary {
     grid-template-columns: 1fr;
+  }
+
+  .platform-account-summary-item + .platform-account-summary-item {
+    border-top: 1px solid #d7e1ef;
+    border-left: 0;
   }
 }

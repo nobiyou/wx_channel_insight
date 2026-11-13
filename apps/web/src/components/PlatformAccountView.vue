@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { NAlert, NButton, NSpin } from "naive-ui";
-import { CheckCircle2, ExternalLink, RefreshCw, UserRound, WifiOff } from "lucide-vue-next";
+import { ExternalLink, RefreshCw, UserRound } from "lucide-vue-next";
 import AccountDetailView from "./AccountDetailView.vue";
 import { collectChannelAccount, fetchAccounts, fetchChannelAccountSession, openChannelAccountLogin } from "../lib/api.js";
 
@@ -182,22 +182,18 @@ defineExpose({ refresh: () => load({ background: true }) });
         </div>
       </section>
 
-      <div class="platform-account-grid">
-        <section class="analysis-surface platform-account-card">
-          <div class="platform-account-card-head"><div><span class="platform-account-eyebrow">连接状态</span><h3>视频号助手连接</h3></div><CheckCircle2 v-if="authenticated" class="platform-account-state-icon good" aria-label="已连接" /><WifiOff v-else class="platform-account-state-icon muted" aria-label="未连接" /></div>
-          <dl class="platform-account-details">
-            <div><dt>连接设备</dt><dd>{{ node?.hostname || node?.id || '暂无设备' }}</dd></div>
-            <div><dt>页面状态</dt><dd>{{ node?.pagePath || '等待页面' }}</dd></div>
-            <div><dt>登录账号</dt><dd>{{ username || '尚未识别' }}</dd></div>
-          </dl>
-        </section>
-        <section class="analysis-surface platform-account-card">
-          <div class="platform-account-card-head"><div><span class="platform-account-eyebrow">最近采集</span><h3>本账号作品</h3></div><span class="platform-account-card-count">{{ collection?.itemCount ?? '—' }}</span></div>
-          <p v-if="collection">最近一次采集已完成 {{ collection.pageCount || 0 }} 页，{{ collection.complete ? '分页已完成' : '后续分页可继续采集' }}。</p>
-          <p v-else>登录后采集本账号作品。</p>
-          <button class="platform-account-link" type="button" :disabled="!authenticated" @click="openData">前往本账号作品 <span aria-hidden="true">→</span></button>
-        </section>
-      </div>
+      <section class="platform-account-summary" aria-label="账号摘要">
+        <div class="platform-account-summary-item">
+          <span class="platform-account-eyebrow">连接状态</span>
+          <div class="platform-account-summary-value"><span class="platform-account-status-dot" :data-tone="authenticated ? 'good' : 'muted'" aria-hidden="true"></span><strong>{{ authenticated ? '已连接' : sessionLabel }}</strong></div>
+          <small>{{ node?.hostname || 'Insight 内置 Edge' }} · {{ node?.pagePath || '等待页面' }}</small>
+        </div>
+        <div class="platform-account-summary-item">
+          <span class="platform-account-eyebrow">本账号作品</span>
+          <div class="platform-account-summary-value"><strong>{{ accountData?.metrics?.videoCount ?? collection?.itemCount ?? '—' }}</strong><span>条</span></div>
+          <button class="platform-account-link" type="button" :disabled="!authenticated" @click="openData">查看作品 <span aria-hidden="true">→</span></button>
+        </div>
+      </section>
 
       <section v-if="authenticated" ref="dataSection" class="platform-account-data-section" aria-labelledby="platform-account-data-title">
         <div class="platform-account-data-heading">
