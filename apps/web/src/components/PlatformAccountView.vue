@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { NAlert, NButton, NSpin } from "naive-ui";
 import { ExternalLink, RefreshCw, UserRound } from "lucide-vue-next";
 import AccountDetailView from "./AccountDetailView.vue";
+import VideoDetailView from "./VideoDetailView.vue";
 import { collectChannelAccount, fetchAccounts, fetchChannelAccountSession, openChannelAccountLogin } from "../lib/api.js";
 
 const props = defineProps({ edgeNodes: { type: Array, default: () => [] } });
@@ -18,6 +19,7 @@ const collection = ref(null);
 const accountData = ref(null);
 const accountLoading = ref(false);
 const dataSection = ref(null);
+const selectedVideoId = ref("");
 let timer;
 
 const node = computed(() => session.value?.node || null);
@@ -40,13 +42,23 @@ async function load(options = {}) {
     session.value = await fetchChannelAccountSession({ clientId: node.value?.id || node.value?.clientId, signal: options.signal });
     error.value = "";
     const nextUsername = String(session.value?.finderUsername || "").trim();
-    if (!nextUsername || String(accountData.value?.channelUsername || "").toLowerCase() !== nextUsername.toLowerCase()) accountData.value = null;
-    if (String(session.value?.status || "") === "authenticated") void loadAccountData(options);
+    const sameAccount = String(accountData.value?.channelUsername || "").toLowerCase() === nextUsername.toLowerCase();
+    if (!nextUsername || !sameAccount) {
+      accountData.value = null;
+      selectedVideoId.value = "";
+    }
+    if (String(session.value?.status || "") === "authenticated" && !accountData.value) void loadAccountData(options);
   } catch (cause) {
     error.value = `账号连接状态读取失败：${cause instanceof Error ? cause.message : cause}`;
   } finally {
     loading.value = false;
     refreshing.value = false;
+    if (authenticated.value) {
+      if (timer) window.clearInterval(timer);
+      timer = undefined;
+    } else if (!timer) {
+      timer = window.setInterval(() => void load({ background: true }), 5000);
+    }
   }
 }
 
@@ -116,12 +128,11 @@ function formatDateTime(value) {
 function handleAccountVideo(payload) {
   const video = payload?.video || payload;
   if (!video?.objectId) return;
-  emit("navigate", "videos", { account: username.value, q: video.title || "" });
+  selectedVideoId.value = String(video.objectId);
 }
 
 onMounted(() => {
   void load();
-  timer = window.setInterval(() => void load({ background: true }), 5000);
 });
 onBeforeUnmount(() => window.clearInterval(timer));
 
@@ -209,7 +220,14 @@ defineExpose({ refresh: () => load({ background: true }) });
         </div>
         <div v-if="accountLoading && !accountData" class="platform-account-data-loading"><n-spin size="medium" /><span>正在读取本账号数据…</span></div>
         <div v-else-if="accountData" class="platform-account-data-detail">
+          <VideoDetailView
+            v-if="selectedVideoId"
+            :object-id="selectedVideoId"
+            :auto-collect="false"
+            @back="selectedVideoId = ''"
+          />
           <AccountDetailView
+            v-else
             :account-key="accountData.channelUsername || username"
             :initial-account="accountData"
             :format-number="formatNumber"

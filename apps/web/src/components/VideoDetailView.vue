@@ -22,6 +22,7 @@ import { monitoringSourceLabel } from "../lib/monitoringTasks.js";
 
 const props = defineProps({
   objectId: { type: String, default: "" },
+  autoCollect: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(["back"]);
@@ -168,7 +169,7 @@ async function load({ background = false, collect = true } = {}) {
     if (playback) detail.value.playback = playback;
     void loadComments(objectId, background ? commentsPage.value : 1, commentsPageSize.value);
     if (!background || !playback) void loadPlayback();
-    if (collect && metricsAreStale(payload.lastObservedAt)) void collectLiveMetrics();
+    if (props.autoCollect && collect && metricsAreStale(payload.lastObservedAt)) void collectLiveMetrics();
   } catch (loadError) {
     if (requestID === detailRequestID) error.value = loadError instanceof Error ? loadError.message : "视频详情加载失败";
   } finally {
