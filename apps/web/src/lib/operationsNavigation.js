@@ -1,7 +1,9 @@
 export const OPERATIONS_NAVIGATION = Object.freeze([
   { key: "dashboard", label: "运营概览" },
+  { key: "platform", label: "平台账号" },
   { key: "accounts", label: "账号监控" },
   { key: "keywords", label: "关键词监控" },
+  { key: "monitoring", label: "监控中心" },
   { key: "videos", label: "视频分析" },
   { key: "agent", label: "智能运营" },
   { key: "settings", label: "辅助设置" },
@@ -22,7 +24,7 @@ export function parseOperationsRoute(hash = "") {
     const id = params.id || "";
     const fallback = key === "account" ? "#accounts" : "#videos";
     const requestedReturn = String(params.return || fallback);
-    const returnHash = /^#(?:dashboard|accounts|keywords|videos|account|agent)(?:[/?]|$)/.test(requestedReturn) ? requestedReturn : fallback;
+    const returnHash = /^#(?:dashboard|platform|accounts|keywords|monitoring|videos|account|agent|settings)(?:[/?]|$)/.test(requestedReturn) ? requestedReturn : fallback;
     return { view: key, id, params, returnHash };
   }
   return { view: OPERATIONS_NAVIGATION.some((item) => item.key === key) ? key : "dashboard", params, returnHash: "" };
@@ -53,7 +55,7 @@ export function videoFactsQuery(params = {}, view = "videos") {
 }
 
 export function monitoringTasksForScope(tasks = [], scope = "diagnostics", targetKey = "", targetAliases = []) {
-  if (scope === "diagnostics") return tasks;
+  if (scope === "diagnostics" || scope === "center") return tasks;
   return tasks.filter((task) => {
     if (task.system || task.scopeMode === "all_saved_bindings") return false;
     const targets = Array.isArray(task.targets) ? task.targets : [];

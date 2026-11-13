@@ -78,6 +78,7 @@ func TestHubRegisterListAndCallRoundTrip(t *testing.T) {
 	// heartbeat so SelectReady can see capabilities
 	hb, _ := json.Marshal(HeartbeatPayload{
 		Hostname:         "pc1",
+		FinderUsername:   "finder-self-001",
 		Status:           "running",
 		APIReady:         true,
 		ReadyClients:     1,
@@ -109,7 +110,7 @@ func TestHubRegisterListAndCallRoundTrip(t *testing.T) {
 	if len(list) != 1 {
 		t.Fatalf("expected 1 node, got %d", len(list))
 	}
-	if list[0].ID != "lan-pc-1" || list[0].ReadyClients != 1 {
+	if list[0].ID != "lan-pc-1" || list[0].ReadyClients != 1 || list[0].FinderUsername != "finder-self-001" {
 		t.Fatalf("unexpected node info: %+v", list[0])
 	}
 

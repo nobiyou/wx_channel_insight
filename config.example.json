@@ -23,7 +23,7 @@
     "demo_context_enabled": false
   },
   "edge": {
-    "enabled": false
+    "enabled": true
   },
   "openai": {
     "base_url": "https://api.openai.com/v1",

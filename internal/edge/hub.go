@@ -268,3 +268,29 @@ func (h *Hub) CallAPI(ctx context.Context, clientID, key string, body any, timeo
 	}
 	return resp.Data, nil
 }
+
+// SendCommand dispatches a non-API command to an online edge node. The edge
+// client acknowledges the command through the same response channel used by
+// API calls, which lets callers distinguish an accepted navigation from an
+// offline node without exposing WebSocket details to HTTP handlers.
+func (h *Hub) SendCommand(ctx context.Context, clientID, action string, data any, timeout time.Duration) (ResponsePayload, error) {
+	if h == nil {
+		return ResponsePayload{}, fmt.Errorf("edge gateway is disabled")
+	}
+	if strings.TrimSpace(clientID) == "" {
+		for _, info := range h.List() {
+			if info.Status != "stale" && strings.TrimSpace(info.ID) != "" {
+				clientID = info.ID
+				break
+			}
+		}
+	}
+	if strings.TrimSpace(clientID) == "" {
+		return ResponsePayload{}, fmt.Errorf("no online edge node")
+	}
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return ResponsePayload{}, err
+	}
+	return h.Call(ctx, clientID, action, raw, timeout)
+}

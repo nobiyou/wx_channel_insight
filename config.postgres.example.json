@@ -29,7 +29,7 @@
     "trusted_token": ""
   },
   "edge": {
-    "enabled": false
+    "enabled": true
   },
   "openai": {
     "base_url": "https://api.openai.com/v1",

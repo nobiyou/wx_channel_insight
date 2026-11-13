@@ -212,6 +212,9 @@ func (s *server) routes() http.Handler {
 	// instead of a bare mux 404 that confuses the web console.
 	mux.HandleFunc("/api/v1/edge/nodes", s.handleEdgeNodes)
 	mux.HandleFunc("/api/v1/edge/call", s.handleEdgeCall)
+	mux.HandleFunc("/api/v1/channel/account/session", s.handleChannelAccountSession)
+	mux.HandleFunc("/api/v1/channel/account/login", s.handleChannelAccountLogin)
+	mux.HandleFunc("/api/v1/channel/account/collect", s.handleChannelAccountCollect)
 	mux.HandleFunc("/api/v1/dashboard", s.handleDashboard)
 	mux.HandleFunc(aiAnalysisRoutePrefix, s.handleAIAnalysis)
 	mux.HandleFunc(aiAnalysisRoutePrefix+"/", s.handleAIAnalysis)

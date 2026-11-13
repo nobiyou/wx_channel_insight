@@ -151,6 +151,34 @@ export async function fetchEdgeNodes(options = {}) {
   }
 }
 
+export async function fetchChannelAccountSession(options = {}) {
+  const path = "/api/v1/channel/account/session";
+  const response = await fetch(buildAPIURLWithQuery(path, options.clientId ? { clientId: options.clientId } : {}), {
+    ...(options.signal ? { signal: options.signal } : {}),
+    cache: "no-store",
+    headers: buildRequestHeaders(path),
+  });
+  if (!response.ok) throw await buildAPIError(response);
+  return response.json();
+}
+
+export async function openChannelAccountLogin(clientId = "") {
+  return accountJSON("/api/v1/channel/account/login", {
+    method: "POST",
+    body: clientId ? { clientId } : {},
+  });
+}
+
+export async function collectChannelAccount(clientId = "", username = "") {
+  return accountJSON("/api/v1/channel/account/collect", {
+    method: "POST",
+    body: {
+      ...(clientId ? { clientId } : {}),
+      ...(username ? { username } : {}),
+    },
+  });
+}
+
 export async function fetchRuntimeStatus(options = {}) {
   try {
     const path = "/api/v1/runtime/status";

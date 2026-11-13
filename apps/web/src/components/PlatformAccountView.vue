@@ -1,0 +1,165 @@
+<script setup>
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { NAlert, NButton, NSpin } from "naive-ui";
+import { CheckCircle2, ExternalLink, RefreshCw, UserRound, WifiOff } from "lucide-vue-next";
+import { collectChannelAccount, fetchChannelAccountSession, openChannelAccountLogin } from "../lib/api.js";
+
+const props = defineProps({ edgeNodes: { type: Array, default: () => [] } });
+const emit = defineEmits(["navigate", "refresh"]);
+
+const session = ref(null);
+const loading = ref(true);
+const refreshing = ref(false);
+const busy = ref(false);
+const error = ref("");
+const notice = ref("");
+const collection = ref(null);
+let timer;
+
+const node = computed(() => session.value?.node || null);
+const username = computed(() => String(session.value?.finderUsername || "").trim());
+const loginQRCode = computed(() => String(session.value?.loginQRCode || node.value?.loginQRCode || "").trim());
+const loginQRCodeURL = computed(() => String(session.value?.loginQRCodeURL || node.value?.loginQRCodeURL || "").trim());
+const authenticated = computed(() => session.value?.status === "authenticated" && username.value);
+const sessionLabel = computed(() => {
+  if (authenticated.value) return "已登录，可查看本账号数据";
+  if (session.value?.status === "login_required") return "等待登录视频号助手";
+  return "等待 wx_channel 连接";
+});
+const sessionTone = computed(() => authenticated.value ? "good" : session.value?.status === "login_required" ? "warn" : "muted");
+
+async function load(options = {}) {
+  if (loading.value && options.background) return;
+  if (options.background) refreshing.value = true;
+  else loading.value = true;
+  try {
+    session.value = await fetchChannelAccountSession({ clientId: node.value?.id || node.value?.clientId, signal: options.signal });
+    error.value = "";
+  } catch (cause) {
+    error.value = `账号连接状态读取失败：${cause instanceof Error ? cause.message : cause}`;
+  } finally {
+    loading.value = false;
+    refreshing.value = false;
+  }
+}
+
+async function login() {
+  if (busy.value || !session.value || session.value.status === "offline") return;
+  busy.value = true;
+  error.value = "";
+  notice.value = "";
+  try {
+    await openChannelAccountLogin(session.value.clientId || node.value?.id || "");
+    notice.value = "已在 Insight 内置浏览器中打开视频号助手，请用手机扫码；登录成功后本页会自动识别账号。";
+    await load({ background: true });
+  } catch (cause) {
+    error.value = `打开 Insight 内置浏览器失败：${cause instanceof Error ? cause.message : cause}`;
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function collect() {
+  if (busy.value || !authenticated.value) return;
+  busy.value = true;
+  error.value = "";
+  notice.value = "";
+  try {
+    collection.value = await collectChannelAccount(session.value.clientId || node.value?.id || "", username.value);
+    notice.value = `已采集 ${collection.value.itemCount || 0} 条本账号作品，数据已写入工作区。`;
+    emit("refresh");
+  } catch (cause) {
+    error.value = `本账号作品采集失败：${cause instanceof Error ? cause.message : cause}`;
+  } finally {
+    busy.value = false;
+  }
+}
+
+function openData() {
+  if (!username.value) return;
+  emit("navigate", "videos", { account: username.value });
+}
+
+onMounted(() => {
+  void load();
+  timer = window.setInterval(() => void load({ background: true }), 5000);
+});
+onBeforeUnmount(() => window.clearInterval(timer));
+
+defineExpose({ refresh: () => load({ background: true }) });
+</script>
+
+<template>
+  <section class="platform-account-page">
+    <div class="analysis-page-head">
+      <div>
+        <div class="analysis-page-kicker">视频号 · 本账号工作台</div>
+        <h2>平台账号</h2>
+        <p>连接视频号助手后，查看本账号作品、互动指标和持续采集状态。</p>
+      </div>
+      <n-button secondary :loading="loading || refreshing" @click="load({ background: true })">
+        <template #icon><RefreshCw /></template>
+        刷新连接
+      </n-button>
+    </div>
+
+    <n-alert v-if="error" type="error" show-icon>{{ error }}</n-alert>
+    <n-alert v-if="notice" type="info" show-icon>{{ notice }}</n-alert>
+
+    <div v-if="loading" class="platform-account-loading"><n-spin size="medium" /><span>正在读取视频号助手连接…</span></div>
+    <template v-else>
+      <section class="platform-account-hero" :data-tone="sessionTone">
+        <div class="platform-account-hero-icon" aria-hidden="true"><UserRound /></div>
+        <div class="platform-account-hero-copy">
+          <span class="platform-account-eyebrow">视频号助手</span>
+          <h3>{{ sessionLabel }}</h3>
+          <p v-if="authenticated">当前登录账号：<strong>{{ username }}</strong></p>
+          <p v-else-if="session?.status === 'login_required'">在 Insight 内置浏览器打开的视频号助手中扫码，登录二维码也会同步显示在本页。</p>
+          <p v-else>请先启动 Insight 桌面版，内置浏览器会自动连接并提供登录入口。</p>
+        </div>
+        <div class="platform-account-hero-actions">
+          <n-button v-if="!authenticated" type="primary" :disabled="session?.status === 'offline'" :loading="busy" @click="login">
+            <template #icon><ExternalLink /></template>
+            打开登录页
+          </n-button>
+          <n-button v-else type="primary" :loading="busy" @click="collect">采集本账号作品</n-button>
+          <n-button v-if="authenticated" secondary :disabled="busy" @click="openData">查看本账号数据</n-button>
+        </div>
+      </section>
+
+      <section v-if="session?.status === 'login_required'" class="platform-account-login-card">
+        <div class="platform-account-login-copy">
+          <span class="platform-account-eyebrow">手机扫码登录</span>
+          <h3>扫描二维码连接本账号</h3>
+          <p>二维码来自 Insight 内置浏览器的视频号助手页面。登录成功后，本页会自动识别账号并显示数据入口。</p>
+          <p class="platform-account-login-note">二维码会自动刷新，请保持 Insight 桌面版运行。</p>
+        </div>
+        <div class="platform-account-qr-wrap" :class="{ 'is-empty': !loginQRCode && !loginQRCodeURL }">
+          <img v-if="loginQRCode" class="platform-account-qr" :src="loginQRCode" alt="视频号助手登录二维码" />
+          <iframe v-else-if="loginQRCodeURL" class="platform-account-qr-frame" :src="loginQRCodeURL" title="视频号助手微信扫码登录" loading="eager" />
+          <div v-else class="platform-account-qr-empty">
+            <n-spin size="small" />
+            <span>正在读取二维码…</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="platform-account-grid">
+        <section class="analysis-surface platform-account-card">
+          <div class="platform-account-card-head"><div><span class="platform-account-eyebrow">连接状态</span><h3>视频号助手连接</h3></div><CheckCircle2 v-if="authenticated" class="platform-account-state-icon good" aria-label="已连接" /><WifiOff v-else class="platform-account-state-icon muted" aria-label="未连接" /></div>
+          <dl class="platform-account-details">
+            <div><dt>连接设备</dt><dd>{{ node?.hostname || node?.id || '暂无设备' }}</dd></div>
+            <div><dt>页面状态</dt><dd>{{ node?.pagePath || '等待页面' }}</dd></div>
+            <div><dt>登录账号</dt><dd>{{ username || '尚未识别' }}</dd></div>
+          </dl>
+        </section>
+        <section class="analysis-surface platform-account-card">
+          <div class="platform-account-card-head"><div><span class="platform-account-eyebrow">最近采集</span><h3>本账号作品</h3></div><span class="platform-account-card-count">{{ collection?.itemCount ?? '—' }}</span></div>
+          <p v-if="collection">最近一次采集已完成 {{ collection.pageCount || 0 }} 页，{{ collection.complete ? '分页已完成' : '后续分页可继续采集' }}。</p>
+          <p v-else>登录后点击“采集本账号作品”，作品会进入视频分析和监控任务。</p>
+          <button class="platform-account-link" type="button" :disabled="!authenticated" @click="openData">前往本账号作品 <span aria-hidden="true">→</span></button>
+        </section>
+      </div>
+    </template>
+  </section>
+</template>

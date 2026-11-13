@@ -36,6 +36,9 @@ type HeartbeatPayload struct {
 	SearchReadyClients  int             `json:"search_ready_clients,omitempty"`
 	FeedReadyClients    int             `json:"feed_ready_clients,omitempty"`
 	ProfileReadyClients int             `json:"profile_ready_clients,omitempty"`
+	FinderUsername      string          `json:"finder_username"`
+	LoginQRCode         string          `json:"login_qr_code,omitempty"`
+	LoginQRCodeURL      string          `json:"login_qr_code_url,omitempty"`
 	SupportsSearch      bool            `json:"supports_search,omitempty"`
 	SupportsFeed        bool            `json:"supports_feed,omitempty"`
 	SupportsProfile     bool            `json:"supports_profile,omitempty"`

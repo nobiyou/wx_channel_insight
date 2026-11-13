@@ -112,7 +112,7 @@ const draftCollectsComments = computed(() => monitoringTaskCollectsComments(draf
 const draftIntervalOptions = computed(() => monitoringIntervalOptions(draft.value));
 const draftScopeOptions = computed(() => {
   if (draft.value.taskType === "legacy") {
-    if (props.scope !== "diagnostics") return [{ label: "只运行选定监控对象", value: "selected" }];
+    if (!['diagnostics', 'center'].includes(props.scope)) return [{ label: "只运行选定监控对象", value: "selected" }];
     return [
       { label: "全部已保存的数据源", value: "all_saved_bindings" },
       { label: "只运行选定目标", value: "selected" },
@@ -513,7 +513,7 @@ watch(
 );
 
 onMounted(() => loadTasks({ keepSelection: false }));
-defineExpose({ refresh: loadTasks });
+defineExpose({ refresh: loadTasks, openCreate: openCreateEditor });
 </script>
 
 <template>
@@ -521,7 +521,7 @@ defineExpose({ refresh: loadTasks });
     <div class="monitoring-task-intro">
       <div>
         <div class="panel-eyebrow">采集计划与状态</div>
-        <h2 :id="titleID">{{ scope === 'keywords' ? '关键词采集设置' : scope === 'accounts' ? '账号采集设置' : '采集运行诊断' }}</h2>
+        <h2 :id="titleID">{{ scope === 'keywords' ? '关键词采集设置' : scope === 'accounts' ? '账号采集设置' : scope === 'center' ? '监控任务队列' : '采集运行诊断' }}</h2>
         <p>暂停、恢复和重试保留已有数据与运行历史。</p>
       </div>
       <div class="monitoring-task-intro-actions">
@@ -721,8 +721,8 @@ defineExpose({ refresh: loadTasks });
             :disabled="editorMode === 'edit' && draft.taskType === 'legacy'"
             :options="[
               ...(scope !== 'keywords' ? [{ label: '账号资料同步', value: 'account_profile' }, { label: '视频列表同步', value: 'video_list' }] : []),
-              ...(scope === 'diagnostics' ? [{ label: '评论补采（辅助数据）', value: 'comment_collection' }] : []),
-              ...(scope === 'keywords' ? [{ label: '关键词视频采集', value: 'legacy' }] : []),
+              ...(scope === 'diagnostics' || scope === 'center' ? [{ label: '评论补采（辅助数据）', value: 'comment_collection' }] : []),
+              ...(scope === 'keywords' ? [{ label: '关键词视频采集', value: 'legacy' }] : scope === 'center' ? [{ label: '已保存来源采集', value: 'legacy' }] : []),
               ...(editorMode === 'edit' && draft.taskType === 'legacy' ? [{ label: '兼容任务（历史）', value: 'legacy' }] : []),
             ]"
             @update:value="onTaskTypeChange"

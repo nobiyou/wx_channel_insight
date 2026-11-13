@@ -36,6 +36,9 @@ type NodeInfo struct {
 	SearchReadyClients  int             `json:"searchReadyClients"`
 	FeedReadyClients    int             `json:"feedReadyClients"`
 	ProfileReadyClients int             `json:"profileReadyClients"`
+	FinderUsername      string          `json:"finderUsername,omitempty"`
+	LoginQRCode         string          `json:"loginQRCode,omitempty"`
+	LoginQRCodeURL      string          `json:"loginQRCodeURL,omitempty"`
 	SupportsSearch      bool            `json:"supportsSearch"`
 	SupportsFeed        bool            `json:"supportsFeed"`
 	SupportsProfile     bool            `json:"supportsProfile"`
@@ -92,6 +95,9 @@ func (n *Node) applyHeartbeat(hb HeartbeatPayload, at time.Time) {
 	n.info.SearchReadyClients = hb.SearchReadyClients
 	n.info.FeedReadyClients = hb.FeedReadyClients
 	n.info.ProfileReadyClients = hb.ProfileReadyClients
+	n.info.FinderUsername = hb.FinderUsername
+	n.info.LoginQRCode = hb.LoginQRCode
+	n.info.LoginQRCodeURL = hb.LoginQRCodeURL
 	n.info.SupportsSearch = hb.SupportsSearch || hb.SearchReadyClients > 0
 	n.info.SupportsFeed = hb.SupportsFeed || hb.FeedReadyClients > 0
 	n.info.SupportsProfile = hb.SupportsProfile || hb.ProfileReadyClients > 0
