@@ -35,6 +35,7 @@ const sessionLabel = computed(() => {
 const sessionTone = computed(() => authenticated.value ? "good" : session.value?.status === "login_required" ? "warn" : "muted");
 
 async function load(options = {}) {
+  if (options.background && authenticated.value) return;
   if (loading.value && options.background) return;
   if (options.background) refreshing.value = true;
   else loading.value = true;
@@ -147,7 +148,7 @@ defineExpose({ refresh: () => load({ background: true }) });
         <h2>平台账号</h2>
         <p>登录后查看本账号作品和数据。</p>
       </div>
-      <n-button secondary :loading="loading || refreshing" @click="load({ background: true })">
+      <n-button secondary :loading="loading || refreshing" @click="load()">
         <template #icon><RefreshCw /></template>
         刷新连接
       </n-button>
