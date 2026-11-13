@@ -40,12 +40,22 @@ const recentTasks = computed(() => [...tasks.value]
 
 const schedulerLabel = computed(() => ({
   online: "调度器在线",
-  running: "正在采集",
   offline: "调度器离线",
   unknown: "等待调度器",
-}[health.value?.schedulerStatus] || "等待调度器"));
-const schedulerTone = computed(() => health.value?.schedulerStatus === "online" || health.value?.schedulerStatus === "running" ? "good" : health.value?.schedulerStatus === "offline" ? "risk" : "warn");
+}[health.value?.schedulerStatus] || (health.value?.schedulerStatus === "running"
+  ? (runningTasks.value.length ? "正在采集" : enabledTasks.value.length ? "等待任务执行" : "调度器在线")
+  : "等待调度器")));
+const schedulerTone = computed(() => {
+  if (health.value?.schedulerStatus === "offline") return "risk";
+  if (health.value?.schedulerStatus === "online" || health.value?.schedulerStatus === "running") return "good";
+  return "warn";
+});
 const coverageCount = computed(() => Array.isArray(health.value?.coverage) ? health.value.coverage.length : 0);
+const schedulerNote = computed(() => {
+  if (!tasks.value.length) return "还没有监控任务，创建任务后才会按计划采集数据。";
+  if (attentionCount.value) return "失败或逾期任务会保留运行记录，处理后可重试。";
+  return "调度器只领取到期任务，避免同一任务重复执行。";
+});
 
 function formatUpdated(value) {
   return value ? formatMonitoringTime(value, "刚刚") : "等待首次读取";
@@ -86,9 +96,9 @@ defineExpose({ refresh: refreshAll });
   <section class="monitoring-center-page" :aria-busy="loading">
     <div class="monitoring-center-hero">
       <div class="monitoring-center-hero-copy">
-        <div class="monitoring-center-kicker"><Radio :size="14" aria-hidden="true" />视频号 · CreatorHub 工作台</div>
-        <h2>让账号、作品和评论持续被看见</h2>
-        <p>把采集计划、运行结果和异常恢复放在一个任务中心里。一次配置后，按周期持续同步视频号数据。</p>
+        <div class="monitoring-center-kicker"><Radio :size="14" aria-hidden="true" />视频号 · Insight 监控工作台</div>
+        <h2>监控任务一览</h2>
+        <p>集中查看调度状态、任务异常和运行记录；任务按计划采集账号、作品和评论数据。</p>
         <div class="monitoring-center-hero-actions">
           <n-button type="primary" @click="taskPanel?.openCreate?.()">新建监控任务</n-button>
           <n-button secondary :loading="loading" @click="refreshAll">
@@ -99,17 +109,17 @@ defineExpose({ refresh: refreshAll });
       </div>
       <div class="monitoring-center-hero-status" :data-tone="schedulerTone">
         <div class="monitoring-center-status-icon"><n-icon size="22"><Activity /></n-icon></div>
-        <div><strong>{{ schedulerLabel }}</strong><span>最后心跳 {{ formatUpdated(health?.lastHeartbeatAt) }}</span></div>
+        <div><strong>{{ schedulerLabel }}</strong><span>最后心跳 {{ formatUpdated(health?.lastHeartbeatAt) }}</span><span>状态更新 {{ formatUpdated(lastUpdated) }}</span></div>
       </div>
     </div>
 
-    <n-alert v-if="error" type="warning" show-icon closable @close="error = ''">{{ error }}。已保留能读取到的监控状态，可稍后重试。</n-alert>
+    <n-alert v-if="error" type="warning" show-icon closable @close="error = ''">{{ error }}。点击“刷新状态”重试。</n-alert>
 
     <div class="monitoring-center-stat-grid" aria-label="监控摘要">
       <article class="monitoring-center-stat-card"><span><CheckCircle2 :size="16" aria-hidden="true" />启用任务</span><strong>{{ enabledTasks.length }}</strong><small>按周期自动采集</small></article>
       <article class="monitoring-center-stat-card"><span><Clock3 :size="16" aria-hidden="true" />正在运行</span><strong>{{ runningTasks.length }}</strong><small>避免重复执行</small></article>
-      <article class="monitoring-center-stat-card" :data-tone="attentionCount ? 'warn' : 'good'"><span><ShieldAlert :size="16" aria-hidden="true" />需要处理</span><strong>{{ attentionCount }}</strong><small>{{ health?.staleTasks || 0 }} 个任务数据偏旧</small></article>
-      <article class="monitoring-center-stat-card"><span><Video :size="16" aria-hidden="true" />监控目标</span><strong>{{ targetCount }}</strong><small>{{ coverageCount }} 个来源有覆盖记录</small></article>
+      <article class="monitoring-center-stat-card" :data-tone="attentionCount ? 'warn' : 'good'"><span><ShieldAlert :size="16" aria-hidden="true" />需要处理</span><strong>{{ attentionCount }}</strong><small>{{ attentionCount ? `${health?.failedTasks || 0} 个失败 · ${health?.overdueTasks || 0} 个逾期` : '没有失败或逾期任务' }}</small></article>
+      <article class="monitoring-center-stat-card"><span><Video :size="16" aria-hidden="true" />监控范围</span><strong>{{ targetCount }}</strong><small>{{ coverageCount }} 个来源有覆盖记录</small></article>
     </div>
 
     <div class="monitoring-center-info-grid">
@@ -121,7 +131,10 @@ defineExpose({ refresh: refreshAll });
           <div><dt>失败任务</dt><dd :data-tone="health?.failedTasks ? 'risk' : 'good'">{{ health?.failedTasks || 0 }}</dd></div>
           <div><dt>状态读取</dt><dd>{{ formatUpdated(lastUpdated) }}</dd></div>
         </dl>
-        <p class="monitoring-center-info-note">调度器只领取到期任务；任务失败、暂停或数据过旧时，会在这里保留原因供恢复。</p>
+        <div class="monitoring-center-attention" :data-tone="attentionCount ? 'warn' : 'good'">
+          <ShieldAlert :size="16" aria-hidden="true" />
+          <div><strong>{{ attentionCount ? `${attentionCount} 个任务需要处理` : tasks.length ? '当前没有异常任务' : '等待创建第一个任务' }}</strong><span>{{ schedulerNote }}</span></div>
+        </div>
       </section>
       <section class="monitoring-center-info-card">
         <div class="monitoring-center-info-head"><div><div class="analysis-section-label">最近活动</div><h3>任务运行状态</h3></div><span class="monitoring-center-info-count">{{ recentTasks.length }} 条</span></div>

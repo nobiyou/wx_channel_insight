@@ -1,9 +1,9 @@
 export const OPERATIONS_NAVIGATION = Object.freeze([
   { key: "dashboard", label: "运营概览" },
   { key: "platform", label: "平台账号" },
+  { key: "monitoring", label: "监控中心" },
   { key: "accounts", label: "账号监控" },
   { key: "keywords", label: "关键词监控" },
-  { key: "monitoring", label: "监控中心" },
   { key: "videos", label: "视频分析" },
   { key: "agent", label: "智能运营" },
   { key: "settings", label: "辅助设置" },

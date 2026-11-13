@@ -5082,6 +5082,14 @@ body {
 .monitoring-center-health-list dd[data-tone="good"] { color: #137653; }
 .monitoring-center-health-list dd[data-tone="warn"] { color: #9b6a20; }
 .monitoring-center-health-list dd[data-tone="risk"] { color: #ae3c49; }
+.monitoring-center-attention { display: flex; align-items: flex-start; gap: 9px; margin-top: 14px; padding: 10px 11px; border: 1px solid #dce6f1; border-radius: 9px; color: #4b607b; background: #f7faff; }
+.monitoring-center-attention svg { flex: 0 0 auto; margin-top: 1px; color: #5b79a4; }
+.monitoring-center-attention strong, .monitoring-center-attention span { display: block; }
+.monitoring-center-attention strong { color: #294568; font-size: 12px; }
+.monitoring-center-attention span { margin-top: 3px; color: #6c7d93; font-size: 11px; line-height: 1.55; }
+.monitoring-center-attention[data-tone="warn"] { border-color: #f0d59a; background: #fffaf0; }
+.monitoring-center-attention[data-tone="warn"] svg { color: #b47b18; }
+.monitoring-center-attention[data-tone="good"] svg { color: #16805a; }
 .monitoring-center-info-note, .monitoring-center-empty { margin: 13px 0 0; color: var(--analytics-muted); font-size: 11px; line-height: 1.7; }
 .monitoring-center-info-count { color: var(--analytics-subtle); font-size: 11px; }
 .monitoring-center-recent-list { display: grid; gap: 0; margin: 12px 0 0; padding: 0; list-style: none; }

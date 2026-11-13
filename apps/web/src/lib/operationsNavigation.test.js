@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { OPERATIONS_NAVIGATION, parseOperationsRoute, buildOperationsHash, videoFactsQuery, monitoringTasksForScope } from "./operationsNavigation.js";
 
-test("navigation offers the three core analysis tasks and supporting overview/settings", () => {
-  assert.deepEqual(OPERATIONS_NAVIGATION.map((item) => item.key), ["dashboard", "platform", "accounts", "keywords", "monitoring", "videos", "agent", "settings"]);
+test("navigation places monitoring before account monitoring", () => {
+  assert.deepEqual(OPERATIONS_NAVIGATION.map((item) => item.key), ["dashboard", "platform", "monitoring", "accounts", "keywords", "videos", "agent", "settings"]);
 });
 
 test("only current routes are recognized without historical aliases", () => {
