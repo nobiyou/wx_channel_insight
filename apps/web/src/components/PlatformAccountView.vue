@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { NAlert, NButton, NSpin } from "naive-ui";
 import { CheckCircle2, ExternalLink, RefreshCw, UserRound, WifiOff } from "lucide-vue-next";
-import { collectChannelAccount, fetchChannelAccountSession, openChannelAccountLogin } from "../lib/api.js";
+import AccountDetailView from "./AccountDetailView.vue";
+import { collectChannelAccount, fetchAccounts, fetchChannelAccountSession, openChannelAccountLogin } from "../lib/api.js";
 
 const props = defineProps({ edgeNodes: { type: Array, default: () => [] } });
 const emit = defineEmits(["navigate", "refresh"]);
@@ -14,6 +15,9 @@ const busy = ref(false);
 const error = ref("");
 const notice = ref("");
 const collection = ref(null);
+const accountData = ref(null);
+const accountLoading = ref(false);
+const dataSection = ref(null);
 let timer;
 
 const node = computed(() => session.value?.node || null);
@@ -35,11 +39,29 @@ async function load(options = {}) {
   try {
     session.value = await fetchChannelAccountSession({ clientId: node.value?.id || node.value?.clientId, signal: options.signal });
     error.value = "";
+    const nextUsername = String(session.value?.finderUsername || "").trim();
+    if (!nextUsername || String(accountData.value?.channelUsername || "").toLowerCase() !== nextUsername.toLowerCase()) accountData.value = null;
+    if (String(session.value?.status || "") === "authenticated") void loadAccountData(options);
   } catch (cause) {
     error.value = `账号连接状态读取失败：${cause instanceof Error ? cause.message : cause}`;
   } finally {
     loading.value = false;
     refreshing.value = false;
+  }
+}
+
+async function loadAccountData(options = {}) {
+  const currentUsername = username.value;
+  if (!currentUsername || accountLoading.value) return;
+  accountLoading.value = true;
+  try {
+    const payload = await fetchAccounts({ q: currentUsername, page: 1, pageSize: 20 });
+    const match = (payload?.items || []).find((item) => String(item?.channelUsername || "").toLowerCase() === currentUsername.toLowerCase());
+    if (match && currentUsername === username.value) accountData.value = match;
+  } catch (cause) {
+    if (!options.background) error.value = `本账号数据读取失败：${cause instanceof Error ? cause.message : cause}`;
+  } finally {
+    accountLoading.value = false;
   }
 }
 
@@ -66,6 +88,7 @@ async function collect() {
   notice.value = "";
   try {
     collection.value = await collectChannelAccount(session.value.clientId || node.value?.id || "", username.value);
+    await loadAccountData();
     notice.value = `已采集 ${collection.value.itemCount || 0} 条本账号作品，数据已写入工作区。`;
     emit("refresh");
   } catch (cause) {
@@ -76,8 +99,24 @@ async function collect() {
 }
 
 function openData() {
-  if (!username.value) return;
-  emit("navigate", "videos", { account: username.value });
+  dataSection.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function formatNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? new Intl.NumberFormat("zh-CN").format(number) : "—";
+}
+
+function formatDateTime(value) {
+  if (!value || String(value).startsWith("0001-")) return "未记录";
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toLocaleString("zh-CN", { hour12: false }) : "未记录";
+}
+
+function handleAccountVideo(payload) {
+  const video = payload?.video || payload;
+  if (!video?.objectId) return;
+  emit("navigate", "videos", { account: username.value, q: video.title || "" });
 }
 
 onMounted(() => {
@@ -160,6 +199,35 @@ defineExpose({ refresh: () => load({ background: true }) });
           <button class="platform-account-link" type="button" :disabled="!authenticated" @click="openData">前往本账号作品 <span aria-hidden="true">→</span></button>
         </section>
       </div>
+
+      <section v-if="authenticated" ref="dataSection" class="platform-account-data-section" aria-labelledby="platform-account-data-title">
+        <div class="platform-account-data-heading">
+          <div>
+            <span class="platform-account-eyebrow">独立数据空间</span>
+            <h3 id="platform-account-data-title">本账号数据</h3>
+            <p>以下指标、视频、评论、历史和监控任务只属于当前登录账号，不与其他账号混合。</p>
+          </div>
+          <n-button secondary :loading="accountLoading" @click="loadAccountData()">
+            <template #icon><RefreshCw /></template>
+            刷新本账号数据
+          </n-button>
+        </div>
+        <div v-if="accountLoading && !accountData" class="platform-account-data-loading"><n-spin size="medium" /><span>正在读取本账号数据…</span></div>
+        <div v-else-if="accountData" class="platform-account-data-detail">
+          <AccountDetailView
+            :account-key="accountData.channelUsername || username"
+            :initial-account="accountData"
+            :format-number="formatNumber"
+            :format-date-time="formatDateTime"
+            @open-video="handleAccountVideo"
+            @refresh="loadAccountData"
+          />
+        </div>
+        <div v-else class="platform-account-data-empty">
+          <strong>还没有本账号数据</strong>
+          <span>先点击“采集本账号作品”，采集完成后这里会显示独立的账号指标和作品列表。</span>
+        </div>
+      </section>
     </template>
   </section>
 </template>

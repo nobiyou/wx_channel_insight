@@ -5347,6 +5347,58 @@ body {
   cursor: not-allowed;
 }
 
+.platform-account-data-section {
+  display: grid;
+  gap: 16px;
+  scroll-margin-top: 20px;
+}
+
+.platform-account-data-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 22px;
+  border: 1px solid #d7e1ef;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #ffffff 0%, #f5f9ff 100%);
+}
+
+.platform-account-data-heading h3 {
+  margin: 5px 0 6px;
+  color: #14243d;
+  font-size: 22px;
+}
+
+.platform-account-data-heading p {
+  margin: 0;
+  color: #617189;
+  line-height: 1.6;
+}
+
+.platform-account-data-loading,
+.platform-account-data-empty {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  padding: 24px;
+  border: 1px dashed #cbd7e7;
+  border-radius: 16px;
+  color: #617189;
+  background: #f8fbff;
+  text-align: center;
+}
+
+.platform-account-data-empty strong {
+  color: #253b59;
+}
+
+.platform-account-data-detail {
+  min-width: 0;
+}
+
 @media (max-width: 820px) {
   .platform-account-hero {
     align-items: flex-start;
@@ -5365,6 +5417,10 @@ body {
 
   .platform-account-login-card {
     align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .platform-account-data-heading {
     flex-direction: column;
   }
 }
