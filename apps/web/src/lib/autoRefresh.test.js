@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { metricsAreStale, startAutoRefresh } from "./autoRefresh.js";
+import { metricsAreStale, shouldRefreshAccountMetrics, startAutoRefresh } from "./autoRefresh.js";
 
 test("only missing or ten-minute-old observations require collection", () => {
   const now = Date.parse("2026-10-16T10:00:00+08:00");
@@ -8,6 +8,15 @@ test("only missing or ten-minute-old observations require collection", () => {
   assert.equal(metricsAreStale("2026-10-16T09:50:00+08:00", now), true);
   assert.equal(metricsAreStale("2026-10-16T09:50:01+08:00", now), false);
   assert.equal(metricsAreStale("2026-10-16T10:01:00+08:00", now), false);
+});
+
+test("account metrics auto-refresh only when an enabled monitoring task exists", () => {
+  const now = Date.parse("2026-10-16T10:00:00+08:00");
+  const stale = "2026-10-16T09:00:00+08:00";
+  assert.equal(shouldRefreshAccountMetrics({ enabled: false, taskCount: 0 }, stale, now), false);
+  assert.equal(shouldRefreshAccountMetrics({ enabled: false, taskCount: 1 }, stale, now), false);
+  assert.equal(shouldRefreshAccountMetrics({ enabled: true, taskCount: 1 }, stale, now), true);
+  assert.equal(shouldRefreshAccountMetrics({ enabled: true, taskCount: 1 }, "2026-10-16T09:55:00+08:00", now), false);
 });
 
 test("auto reads pause when hidden, recover after failure, and stop after disposal", async () => {

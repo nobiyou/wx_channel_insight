@@ -36,7 +36,7 @@ import {
   startAccountMonitoring,
   updateAccountProfile,
 } from "../lib/api.js";
-import { metricsAreStale } from "../lib/autoRefresh.js";
+import { shouldRefreshAccountMetrics } from "../lib/autoRefresh.js";
 
 const props = defineProps({
   accountKey: { type: String, default: "" },
@@ -198,7 +198,7 @@ async function load({ background = false, collect = true } = {}) {
     if (activeTab.value === "comments") await loadComments();
     if (activeTab.value === "history") await loadHistory();
     if (activeTab.value === "analysis") await workbench.value?.refresh({ background });
-    if (collect && metricsAreStale(account.value?.metrics?.recentObservedAt)) void collectLiveMetrics();
+    if (collect && shouldRefreshAccountMetrics(monitoring.value, account.value?.metrics?.recentObservedAt)) void collectLiveMetrics();
   } catch (loadError) {
     if (serial !== requestSerial.value) return;
     error.value = loadError instanceof Error ? loadError.message : "账户详情加载失败";
@@ -211,14 +211,14 @@ async function collectLiveMetrics(force = false) {
   if (liveCollecting.value || !accountID.value) return;
   const id = accountID.value;
   liveCollecting.value = true;
-  liveNotice.value = "正在采集账号最新视频与互动指标，当前数据可继续查看…";
+  liveNotice.value = "正在刷新账号指标，当前数据可继续查看…";
   try {
     const result = await refreshMonitoringMetrics("account", id, force);
     if (accountID.value !== id) return;
     liveNotice.value = result.message || "指标仍在 10 分钟有效期内";
     if (result.status === "updated") await load({ background: true, collect: false });
   } catch (cause) {
-    if (accountID.value === id) liveNotice.value = `实时采集失败，保留上次有效数据：${cause instanceof Error ? cause.message : cause}`;
+    if (accountID.value === id) liveNotice.value = `指标刷新失败，保留上次有效数据：${cause instanceof Error ? cause.message : cause}`;
   } finally { liveCollecting.value = false; }
 }
 
@@ -472,7 +472,7 @@ defineExpose({ refresh: load });
   <section class="account-detail-page" aria-labelledby="account-detail-title">
     <div class="account-detail-back-row">
       <button class="account-detail-back-button" type="button" @click="emit('back')"><ChevronLeft :size="16" aria-hidden="true" />返回账户列表</button>
-      <span class="account-detail-route-label">账户详情 / 主数据与采集证据</span>
+      <span class="account-detail-route-label">账户详情</span>
     </div>
 
     <div class="account-detail-heading">
@@ -483,7 +483,7 @@ defineExpose({ refresh: load });
       <div class="account-detail-heading-actions"><span class="account-library-status" :data-tone="monitoring.enabled ? 'active' : 'idle'"><Radio :size="14" aria-hidden="true" />{{ monitoringLabel }}</span><button class="account-library-flag" :class="{ active: account?.isPriority }" type="button" :disabled="actionID" :title="account?.isPriority ? '取消重点账号' : '设为重点账号'" :aria-label="account?.isPriority ? '取消重点账号' : '设为重点账号'" @click="togglePriority"><Star :size="16" :fill="account?.isPriority ? 'currentColor' : 'none'" aria-hidden="true" /></button><button class="account-detail-refresh" type="button" title="刷新账户详情" aria-label="刷新账户详情" :disabled="loading || actionID" @click="load"><RefreshCw :size="15" aria-hidden="true" /></button></div>
     </div>
 
-    <div class="account-detail-profile-actions"><span class="analysis-muted-cell">指标超过 10 分钟时自动采集 · 评论任务至少间隔 30 分钟</span><button class="tool-button secondary" type="button" :disabled="liveCollecting || !accountID" @click="collectLiveMetrics(true)"><RefreshCw :size="14" />{{ liveCollecting ? '正在采集…' : '立即采集指标' }}</button></div>
+    <div class="account-detail-profile-actions"><button class="tool-button secondary" type="button" :disabled="liveCollecting || !accountID" @click="collectLiveMetrics(true)"><RefreshCw :size="14" />{{ liveCollecting ? '正在刷新…' : '刷新指标' }}</button></div>
     <n-alert v-if="liveNotice" type="info" :show-icon>{{ liveNotice }}</n-alert>
     <n-alert v-if="dataNotice" type="warning" :show-icon>{{ dataNotice }}
     </n-alert>
@@ -499,9 +499,9 @@ defineExpose({ refresh: load });
 
     <div class="analysis-stat-strip account-detail-stat-strip"><div v-for="metric in accountMetrics" :key="metric[0]"><span>{{ metric[0] }}</span><strong>{{ formatMetric(metric[1]) }}</strong></div></div>
 
-    <section class="analysis-surface account-detail-monitor-surface" aria-labelledby="account-monitor-title"><div class="account-detail-monitor-main"><div><div class="analysis-section-label">采集关系</div><h3 id="account-monitor-title">账号监控</h3><p>重点标记只代表业务关注；监控状态由真实任务目标派生。</p></div><div class="account-detail-monitor-actions"><button class="tool-button primary" type="button" :disabled="Boolean(actionID)" @click="monitorAccount"><Radio :size="14" aria-hidden="true" />{{ monitoring.taskCount ? "管理监控" : "加入监控" }}</button><button class="tool-button secondary" type="button" :disabled="Boolean(actionID) || !account?.channelUsername" @click="backfillComments"><RefreshCw :size="14" aria-hidden="true" />全量回采评论</button></div></div><div v-if="monitoring.tasks?.length" class="account-detail-task-summary"><div v-for="task in monitoring.tasks" :key="task.taskId || task.id" class="account-detail-task-row"><strong>{{ task.taskName || task.name || "账号监控任务" }}</strong><span>{{ monitoringTaskStatusLabel(task.status) }} · 最近运行 {{ formatDateTime(task.lastRunAt) }}</span><span v-if="task.lastError" class="account-detail-task-error">{{ task.lastError }}</span></div></div><div v-else class="account-detail-monitor-empty">当前账号还没有关联监控任务。</div></section>
+    <section class="analysis-surface account-detail-monitor-surface" aria-labelledby="account-monitor-title"><div class="account-detail-monitor-main"><div><div class="analysis-section-label">采集关系</div><h3 id="account-monitor-title">账号监控</h3><p>监控状态来自实际任务。</p></div><div class="account-detail-monitor-actions"><button class="tool-button primary" type="button" :disabled="Boolean(actionID)" @click="monitorAccount"><Radio :size="14" aria-hidden="true" />{{ monitoring.taskCount ? "管理监控" : "加入监控" }}</button><button class="tool-button secondary" type="button" :disabled="Boolean(actionID) || !account?.channelUsername" @click="backfillComments"><RefreshCw :size="14" aria-hidden="true" />全量回采评论</button></div></div><div v-if="monitoring.tasks?.length" class="account-detail-task-summary"><div v-for="task in monitoring.tasks" :key="task.taskId || task.id" class="account-detail-task-row"><strong>{{ task.taskName || task.name || "账号监控任务" }}</strong><span>{{ monitoringTaskStatusLabel(task.status) }} · 最近运行 {{ formatDateTime(task.lastRunAt) }}</span><span v-if="task.lastError" class="account-detail-task-error">{{ task.lastError }}</span></div></div><div v-else class="account-detail-monitor-empty">当前账号还没有关联监控任务。</div></section>
 
-    <div class="analysis-toolbar account-detail-tabs" role="tablist" aria-label="账户详情内容"><div class="analysis-tabs"><button v-for="tab in [{ key: 'analysis', label: '运营分析与筛选' }, { key: 'videos', label: '视频列表' }, { key: 'comments', label: '评论库' }, { key: 'history', label: '历史证据' }]" :key="tab.key" class="analysis-tab" :class="{ active: activeTab === tab.key }" type="button" role="tab" :aria-selected="activeTab === tab.key" @click="selectTab(tab.key)">{{ tab.label }}</button></div><span class="account-detail-tab-note">所有列表均为服务端分页，评论正文保留原始采集证据。</span></div>
+    <div class="analysis-toolbar account-detail-tabs" role="tablist" aria-label="账户详情内容"><div class="analysis-tabs"><button v-for="tab in [{ key: 'analysis', label: '运营分析与筛选' }, { key: 'videos', label: '视频列表' }, { key: 'comments', label: '评论库' }, { key: 'history', label: '历史证据' }]" :key="tab.key" class="analysis-tab" :class="{ active: activeTab === tab.key }" type="button" role="tab" :aria-selected="activeTab === tab.key" @click="selectTab(tab.key)">{{ tab.label }}</button></div></div>
 
     <VideoAnalysisList v-if="activeTab === 'analysis'" ref="workbench" mode="account" route-view="account" :route-params="workbenchRoute" :scope-account="workbenchAccount" :initial-params="workbenchParams" @open-video="openWorkbenchVideo" />
     <section v-else-if="activeTab === 'videos'" class="analysis-surface account-detail-video-surface" aria-labelledby="account-videos-title"><div class="analysis-surface-head account-detail-list-head"><div><div class="analysis-section-label">关联内容</div><h3 id="account-videos-title">账户视频列表</h3><p>展示该账户已采集的视频，不受榜单 Top N 限制；上游分页未完成时仍可能存在未采集视频。</p></div><div class="account-detail-list-meta"><span>{{ tabLoading ? "读取中…" : `${formatNumber(total)} 条视频` }}</span><button class="account-detail-refresh" type="button" title="刷新账户视频" aria-label="刷新账户视频" :disabled="tabLoading" @click="loadVideos"><RefreshCw :size="15" aria-hidden="true" /></button></div></div><div class="account-detail-list-toolbar"><span class="account-detail-list-note">点击视频标题查看视频详情和互动历史。</span><div class="account-detail-list-controls"><label class="analysis-limit-select"><span>排序</span><select :value="sort" @change="changeSort"><option v-for="option in sortOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></label><button class="account-detail-direction" type="button" :aria-label="direction === 'asc' ? '升序，点击切换为降序' : '降序，点击切换为升序'" :title="direction === 'asc' ? '升序' : '降序'" @click="toggleDirection"><ArrowUp v-if="direction === 'asc'" :size="15" aria-hidden="true" /><ArrowDown v-else :size="15" aria-hidden="true" /></button><label class="analysis-limit-select"><span>每页</span><select :value="pageSize" @change="changePageSize"><option :value="20">20</option><option :value="50">50</option></select></label></div></div><div v-if="tabLoading && !videos.length" class="account-detail-loading"><n-spin size="medium" /><span>正在读取账户视频…</span></div><div v-else-if="!videos.length" class="analysis-empty"><n-empty description="当前账户暂无可展示的视频记录" /></div><div v-else class="analysis-table-wrap"><table class="analysis-table account-detail-video-table"><thead><tr><th>视频</th><th>发布时间</th><th class="analysis-number-col">点赞</th><th class="analysis-number-col">评论</th><th class="analysis-number-col">收藏</th><th class="analysis-number-col">转发</th><th>来源</th><th class="analysis-action-col"><span class="sr-only">操作</span></th></tr></thead><tbody><tr v-for="video in videos" :key="video.id || video.objectId"><td class="analysis-title-cell account-detail-video-title-cell"><button class="analysis-title-button" type="button" :disabled="!video.objectId" :title="video.objectId ? '打开视频详情' : '缺少视频标识'" @click="emit('open-video', video)">{{ video.title || "未命名视频" }}</button><span>{{ videoSubtitle(video) }}</span></td><td class="account-detail-time-cell"><strong>{{ videoTime(video) }}</strong><small>采集 {{ formatDateTime(video.observedAt) }}</small></td><td class="analysis-number-cell"><span class="account-detail-metric"><Heart :size="13" aria-hidden="true" />{{ formatMetric(video.likes) }}</span></td><td class="analysis-number-cell"><span class="account-detail-metric"><MessageCircle :size="13" aria-hidden="true" />{{ formatMetric(video.comments) }}</span></td><td class="analysis-number-cell"><span class="account-detail-metric"><Bookmark :size="13" aria-hidden="true" />{{ formatMetric(video.favorites) }}</span></td><td class="analysis-number-cell"><span class="account-detail-metric"><Share2 :size="13" aria-hidden="true" />{{ formatMetric(video.forwards) }}</span></td><td class="analysis-muted-cell">{{ video.source || "来源待确认" }}</td><td class="analysis-action-col"><button class="analysis-icon-button" type="button" :disabled="!video.objectId" aria-label="查看视频详情" title="查看视频详情" @click="emit('open-video', video)"><ArrowUpRight :size="16" aria-hidden="true" /></button></td></tr></tbody></table></div><footer v-if="total" class="data-center-pagination account-detail-pagination"><span>显示 {{ pageStart }}–{{ pageEnd }}，共 {{ formatNumber(total) }} 条</span><div class="data-center-pagination-controls"><button class="analysis-icon-button" type="button" aria-label="上一页" title="上一页" :disabled="page <= 1 || tabLoading" @click="changePage(page - 1)"><ChevronLeft :size="16" aria-hidden="true" /></button><strong>第 {{ page }} / {{ totalPages }} 页</strong><button class="analysis-icon-button" type="button" aria-label="下一页" title="下一页" :disabled="page >= totalPages || tabLoading" @click="changePage(page + 1)"><ChevronRight :size="16" aria-hidden="true" /></button></div></footer></section>

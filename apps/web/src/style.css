@@ -4406,11 +4406,6 @@ body {
   align-items: center;
 }
 
-.account-detail-tab-note {
-  color: var(--analytics-subtle);
-  font-size: 0.69rem;
-}
-
 .account-detail-comment-search {
   display: flex;
   align-items: center;
@@ -5218,12 +5213,6 @@ body {
   margin: 0;
   color: #617189;
   line-height: 1.65;
-}
-
-.platform-account-login-note {
-  margin-top: 10px !important;
-  color: #8995a5 !important;
-  font-size: 12px;
 }
 
 .platform-account-qr-wrap {

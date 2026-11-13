@@ -72,7 +72,7 @@ async function login() {
   notice.value = "";
   try {
     await openChannelAccountLogin(session.value.clientId || node.value?.id || "");
-    notice.value = "已在 Insight 内置浏览器中打开视频号助手，请用手机扫码；登录成功后本页会自动识别账号。";
+    notice.value = "已打开登录页，请用手机微信扫码。";
     await load({ background: true });
   } catch (cause) {
     error.value = `打开 Insight 内置浏览器失败：${cause instanceof Error ? cause.message : cause}`;
@@ -134,7 +134,7 @@ defineExpose({ refresh: () => load({ background: true }) });
       <div>
         <div class="analysis-page-kicker">视频号 · 本账号工作台</div>
         <h2>平台账号</h2>
-        <p>连接视频号助手后，查看本账号作品、互动指标和持续采集状态。</p>
+        <p>登录后查看本账号作品和数据。</p>
       </div>
       <n-button secondary :loading="loading || refreshing" @click="load({ background: true })">
         <template #icon><RefreshCw /></template>
@@ -153,7 +153,7 @@ defineExpose({ refresh: () => load({ background: true }) });
           <span class="platform-account-eyebrow">视频号助手</span>
           <h3>{{ sessionLabel }}</h3>
           <p v-if="authenticated">当前登录账号：<strong>{{ username }}</strong></p>
-          <p v-else-if="session?.status === 'login_required'">在 Insight 内置浏览器打开的视频号助手中扫码，登录二维码也会同步显示在本页。</p>
+          <p v-else-if="session?.status === 'login_required'">请在内置浏览器中扫码登录。</p>
           <p v-else>请先启动 Insight 桌面版，内置浏览器会自动连接并提供登录入口。</p>
         </div>
         <div class="platform-account-hero-actions">
@@ -170,8 +170,7 @@ defineExpose({ refresh: () => load({ background: true }) });
         <div class="platform-account-login-copy">
           <span class="platform-account-eyebrow">手机扫码登录</span>
           <h3>扫描二维码连接本账号</h3>
-          <p>二维码来自 Insight 内置浏览器的视频号助手页面。登录成功后，本页会自动识别账号并显示数据入口。</p>
-          <p class="platform-account-login-note">二维码会自动刷新，请保持 Insight 桌面版运行。</p>
+          <p>使用手机微信扫码，登录后自动识别账号。</p>
         </div>
         <div class="platform-account-qr-wrap" :class="{ 'is-empty': !loginQRCode && !loginQRCodeURL }">
           <img v-if="loginQRCode" class="platform-account-qr" :src="loginQRCode" alt="视频号助手登录二维码" />
@@ -195,7 +194,7 @@ defineExpose({ refresh: () => load({ background: true }) });
         <section class="analysis-surface platform-account-card">
           <div class="platform-account-card-head"><div><span class="platform-account-eyebrow">最近采集</span><h3>本账号作品</h3></div><span class="platform-account-card-count">{{ collection?.itemCount ?? '—' }}</span></div>
           <p v-if="collection">最近一次采集已完成 {{ collection.pageCount || 0 }} 页，{{ collection.complete ? '分页已完成' : '后续分页可继续采集' }}。</p>
-          <p v-else>登录后点击“采集本账号作品”，作品会进入视频分析和监控任务。</p>
+          <p v-else>登录后采集本账号作品。</p>
           <button class="platform-account-link" type="button" :disabled="!authenticated" @click="openData">前往本账号作品 <span aria-hidden="true">→</span></button>
         </section>
       </div>
@@ -205,7 +204,7 @@ defineExpose({ refresh: () => load({ background: true }) });
           <div>
             <span class="platform-account-eyebrow">独立数据空间</span>
             <h3 id="platform-account-data-title">本账号数据</h3>
-            <p>以下指标、视频、评论、历史和监控任务只属于当前登录账号，不与其他账号混合。</p>
+            <p>仅展示当前登录账号的指标、作品、评论和监控任务。</p>
           </div>
           <n-button secondary :loading="accountLoading" @click="loadAccountData()">
             <template #icon><RefreshCw /></template>

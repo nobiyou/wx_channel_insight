@@ -5,6 +5,10 @@ export function metricsAreStale(observedAt, now = Date.now()) {
   return !Number.isFinite(observed) || now - observed >= 10 * 60000;
 }
 
+export function shouldRefreshAccountMetrics(monitoring, observedAt, now = Date.now()) {
+  return Boolean(monitoring?.enabled) && metricsAreStale(observedAt, now);
+}
+
 export function startAutoRefresh(read, { interval = 30000, visible = () => document.visibilityState === "visible", schedule = setTimeout, cancel = clearTimeout, onError = () => {} } = {}) {
   let stopped = false;
   let running = false;
