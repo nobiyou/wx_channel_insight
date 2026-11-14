@@ -5201,77 +5201,6 @@ body {
   gap: 8px;
 }
 
-.platform-account-login-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  min-height: 250px;
-  padding: 22px 28px;
-  border: 1px solid #d7e1ef;
-  border-radius: 16px;
-  background: #ffffff;
-}
-
-.platform-account-login-copy {
-  min-width: 0;
-  max-width: 620px;
-}
-
-.platform-account-login-copy h3 {
-  margin: 5px 0 8px;
-  color: #14243d;
-  font-size: 20px;
-}
-
-.platform-account-login-copy p {
-  margin: 0;
-  color: #617189;
-  line-height: 1.65;
-}
-
-.platform-account-qr-wrap {
-  width: 196px;
-  height: 196px;
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  padding: 8px;
-  border: 1px solid #e1e8f1;
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 8px 24px rgba(34, 66, 104, .08);
-}
-
-.platform-account-qr-wrap.is-empty {
-  color: #71809a;
-  background: #f7f9fc;
-  box-shadow: none;
-}
-
-.platform-account-qr {
-  width: 180px;
-  height: 180px;
-  display: block;
-  object-fit: contain;
-  image-rendering: pixelated;
-}
-
-.platform-account-qr-frame {
-  width: 180px;
-  height: 180px;
-  display: block;
-  border: 0;
-  background: #fff;
-}
-
-.platform-account-qr-empty {
-  display: grid;
-  place-items: center;
-  gap: 8px;
-  font-size: 12px;
-}
-
 .platform-account-summary {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, .8fr);
@@ -5409,10 +5338,6 @@ body {
     padding-left: 70px;
   }
 
-  .platform-account-login-card {
-    align-items: flex-start;
-    flex-direction: column;
-  }
 
   .platform-account-data-heading {
     flex-direction: column;

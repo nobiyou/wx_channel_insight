@@ -109,7 +109,9 @@ class CDPPage {
 
   async navigate(url) {
     await this.command("Page.enable");
-    return this.command("Page.navigate", { url });
+    const result = await this.command("Page.navigate", { url });
+    if (result?.errorText) throw new Error(result.errorText);
+    return result;
   }
 
   close() {
@@ -117,7 +119,7 @@ class CDPPage {
   }
 }
 
-class InsightDesktopBridge {
+export class InsightDesktopBridge {
   constructor() {
     this.edgeProcess = null;
     this.loginProcess = null;
@@ -127,8 +129,6 @@ class InsightDesktopBridge {
       pagePath: "",
       href: "",
       finderUsername: "",
-      loginQRCode: "",
-      loginQRCodeURL: "",
       apiReady: false,
       apiFunctional: false,
       methods: {},
@@ -139,6 +139,8 @@ class InsightDesktopBridge {
     this.edgePending = new Map();
     this.edgeHeartbeatTimer = null;
     this.stateTimer = null;
+    this.loginGeneration = 0;
+    this.refreshPending = null;
   }
 
   async start() {
@@ -184,9 +186,12 @@ class InsightDesktopBridge {
   }
 
   async openLogin() {
+    this.loginGeneration++;
+    this.clearPageState();
     const page = await this.findChannelPage();
     if (page) {
       await page.navigate(loginURL);
+      await page.command("Page.bringToFront");
       return;
     }
     this.loginProcess = spawn(locateEdge(), [
@@ -197,60 +202,51 @@ class InsightDesktopBridge {
       "--no-first-run",
       "--no-default-browser-check",
     ], { windowsHide: false, stdio: "ignore" });
+    await new Promise((resolve, reject) => {
+      this.loginProcess.once("spawn", resolve);
+      this.loginProcess.once("error", reject);
+    });
+  }
+
+  clearPageState() {
+    this.lastState = { status: "login_required", pagePath: "", href: "", finderUsername: "", apiReady: false, apiFunctional: false, methods: {}, timestamp: Date.now() };
+    return this.lastState;
   }
 
   async refreshPageState() {
-    const page = await this.findChannelPage();
-    if (!page) {
-      this.lastState = {
-        ...this.lastState,
-        status: "login_required",
-        pagePath: "",
-        href: "",
-        finderUsername: "",
-        loginQRCode: "",
-        loginQRCodeURL: "",
-        apiReady: false,
-        methods: {},
-        timestamp: Date.now(),
-      };
-      return this.lastState;
+    if (this.refreshPending) return this.refreshPending;
+    this.refreshPending = this.readPageState();
+    try { return await this.refreshPending; }
+    finally { this.refreshPending = null; }
+  }
+
+  async readPageState() {
+    const generation = this.loginGeneration;
+    let page, state;
+    try {
+      page = await this.findChannelPage();
+      if (generation !== this.loginGeneration) return this.lastState;
+      if (!page) return this.clearPageState();
+      state = await page.evaluate(`(() => {
+        const path = '/' + String(location.pathname || '').split('/').filter(Boolean).join('/');
+        const login = ['/', '/platform/login', '/login', '/login.html'].includes(path);
+        const platformPage = path.startsWith('/platform/') && !login;
+        const text = platformPage ? String(document.body?.innerText || document.body?.textContent || '') : '';
+        const match = text.match(/视频号\\s*ID\\s*[:：]\\s*([A-Za-z0-9_-]{5,})/i);
+        const username = login ? '' : String(window.__wx_username || (platformPage ? match?.[1] : '') || '').trim();
+        const methods = {
+          finderUserPage: !login && !!(window.WXU?.API && typeof window.WXU.API.finderUserPage === 'function'),
+          finderSearch: !login && !!(window.WXU?.API2 && typeof window.WXU.API2.finderSearch === 'function'),
+          finderGetCommentDetail: !login && !!(window.WXU?.API && typeof window.WXU.API.finderGetCommentDetail === 'function'),
+          finderGetCommentList: !login && !!(window.WXU?.API && typeof window.WXU.API.finderGetCommentList === 'function')
+        };
+        return { pagePath: path || '/', href: location.href, finderUsername: username, apiReady: Object.values(methods).some(Boolean), methods, visible: !document.hidden, timestamp: Date.now() };
+      })()`);
+    } catch (error) {
+      if (generation === this.loginGeneration) this.clearPageState();
+      throw error;
     }
-    const state = await page.evaluate(`(() => {
-      const visible = (el) => {
-        if (!el) return false;
-        const r = el.getBoundingClientRect();
-        const s = getComputedStyle(el);
-        return r.width >= 140 && r.height >= 140 && r.width <= 720 && r.height <= 720 && s.display !== 'none' && s.visibility !== 'hidden';
-      };
-      const candidates = [];
-      const add = (value, el, bonus = 0) => {
-        const raw = String(value || '').trim();
-        if (!raw || raw.length > 320000 || !visible(el)) return;
-        const r = el.getBoundingClientRect();
-        if (Math.abs(r.width - r.height) > Math.max(24, Math.min(r.width, r.height) * .28)) return;
-        const hint = String(el.className || '') + ' ' + String(el.id || '') + ' ' + String(el.alt || '');
-        candidates.push({ value: raw, score: r.width * r.height + (/qr|qrcode|scan|code|登录|扫码/i.test(hint) ? 1000000 : 0) + bonus });
-      };
-      document.querySelectorAll('img').forEach((el) => add(el.currentSrc || el.src || el.getAttribute('data-src'), el, String(el.src || '').startsWith('data:image/') ? 300000 : 0));
-      document.querySelectorAll('canvas').forEach((el) => { try { add(el.toDataURL('image/png'), el, 500000); } catch {} });
-      document.querySelectorAll('*').forEach((el) => { const bg = getComputedStyle(el).backgroundImage || ''; const m = bg.match(/url\\(["']?([^"')]+)["']?\\)/i); if (m) add(m[1], el, 100000); });
-      candidates.sort((a, b) => b.score - a.score);
-      const text = String(document.body?.innerText || document.body?.textContent || '');
-      const path = String(location.pathname || '');
-      const match = text.match(/视频号\\s*ID\\s*[:：]\\s*([A-Za-z0-9_-]{5,})/i);
-      const methods = {
-        finderUserPage: !!(window.WXU?.API && typeof window.WXU.API.finderUserPage === 'function'),
-        finderSearch: !!(window.WXU?.API2 && typeof window.WXU.API2.finderSearch === 'function'),
-        finderGetCommentDetail: !!(window.WXU?.API && typeof window.WXU.API.finderGetCommentDetail === 'function'),
-        finderGetCommentList: !!(window.WXU?.API && typeof window.WXU.API.finderGetCommentList === 'function')
-      };
-      const previousUsername = ${JSON.stringify(this.lastState.finderUsername || '')};
-      const username = window.__wx_username || match?.[1] || (path.endsWith('/platform/post/list') ? previousUsername : '');
-      const frames = Array.from(document.querySelectorAll('iframe')).map((el) => ({ src: el.src || '', w: el.getBoundingClientRect().width, h: el.getBoundingClientRect().height }));
-      const qrFrame = frames.find((frame) => frame.w >= 180 && frame.h >= 140 && /qrconnect|oauth|login|appid/i.test(frame.src));
-      return { pagePath: path, href: location.href, finderUsername: String(username).trim(), loginQRCode: username ? '' : (candidates[0]?.value || ''), loginQRCodeURL: username ? '' : (qrFrame?.src || ''), apiReady: Object.values(methods).some(Boolean), methods, visible: !document.hidden, timestamp: Date.now() };
-    })()`);
+    if (generation !== this.loginGeneration) return this.lastState;
     // The current assistant build exposes the post list through its normal
     // page request but no longer leaves WXU on window.  Advertise the
     // compatible feed capability so Insight can use that first-party page
@@ -305,8 +301,6 @@ class InsightDesktopBridge {
       feed_ready_clients: methods.finderUserPage ? 1 : 0,
       profile_ready_clients: methods.finderGetCommentDetail ? 1 : 0,
       finder_username: state.finderUsername || "",
-      login_qr_code: state.loginQRCode || "",
-      login_qr_code_url: state.loginQRCodeURL || "",
       supports_search: !!methods.finderSearch, supports_feed: !!methods.finderUserPage,
       supports_profile: !!methods.finderGetCommentDetail, methods,
     };
@@ -320,8 +314,12 @@ class InsightDesktopBridge {
     let command;
     command = asObject(message.payload);
     if (command.action === "channel_navigate") {
-      await this.openLogin().catch(() => {});
-      this.respond(message.id, true, { accepted: true });
+      try {
+        await this.openLogin();
+        this.respond(message.id, true, { accepted: true });
+      } catch (error) {
+        this.respond(message.id, false, null, error instanceof Error ? error.message : String(error));
+      }
       return;
     }
     if (command.action === "channel_reload") {
@@ -425,7 +423,12 @@ function startBridge(bridge) {
       return;
     }
     if (pathname === "/login" && request.method === "POST") {
-      await bridge.openLogin().catch(() => {});
+      try { await bridge.openLogin(); }
+      catch (error) {
+        response.writeHead(502, { "Content-Type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ ok: false, error: error instanceof Error ? error.message : String(error) }));
+        return;
+      }
       response.setHeader("Content-Type", "application/json; charset=utf-8");
       response.end(JSON.stringify({ ok: true, url: loginURL }));
       return;
@@ -436,14 +439,16 @@ function startBridge(bridge) {
   return server;
 }
 
-const bridge = new InsightDesktopBridge();
-const httpServer = startBridge(bridge);
-const shutdown = () => { httpServer.close(); bridge.stop(); process.exit(0); };
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const bridge = new InsightDesktopBridge();
+  const httpServer = startBridge(bridge);
+  const shutdown = () => { httpServer.close(); bridge.stop(); process.exit(0); };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 
-bridge.start().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  httpServer.close();
-  process.exitCode = 1;
-});
+  bridge.start().catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    httpServer.close();
+    process.exitCode = 1;
+  });
+}

@@ -21,11 +21,13 @@ const accountLoading = ref(false);
 const dataSection = ref(null);
 const selectedVideoId = ref("");
 let timer;
+let sessionLoading = false;
+let disposed = false;
+let sessionController;
+let accountLookupUsername = "";
 
 const node = computed(() => session.value?.node || null);
-const username = computed(() => String(session.value?.finderUsername || "").trim());
-const loginQRCode = computed(() => String(session.value?.loginQRCode || node.value?.loginQRCode || "").trim());
-const loginQRCodeURL = computed(() => String(session.value?.loginQRCodeURL || node.value?.loginQRCodeURL || "").trim());
+const username = computed(() => session.value?.status === "authenticated" ? String(session.value?.finderUsername || "").trim() : "");
 const authenticated = computed(() => session.value?.status === "authenticated" && username.value);
 const sessionLabel = computed(() => {
   if (authenticated.value) return "已登录，可查看本账号数据";
@@ -35,31 +37,43 @@ const sessionLabel = computed(() => {
 const sessionTone = computed(() => authenticated.value ? "good" : session.value?.status === "login_required" ? "warn" : "muted");
 
 async function load(options = {}) {
-  if (options.background && authenticated.value) return;
-  if (loading.value && options.background) return;
+  if (disposed || sessionLoading) return;
+  sessionLoading = true;
+  window.clearTimeout(timer);
+  sessionController = new AbortController();
   if (options.background) refreshing.value = true;
   else loading.value = true;
   try {
-    session.value = await fetchChannelAccountSession({ clientId: node.value?.id || node.value?.clientId, signal: options.signal });
+    const nextSession = await fetchChannelAccountSession({ clientId: node.value?.id || node.value?.clientId, signal: sessionController.signal });
+    if (disposed) return;
+    const previousUsername = username.value;
+    const previousClientId = session.value?.clientId;
+    session.value = nextSession;
     error.value = "";
-    const nextUsername = String(session.value?.finderUsername || "").trim();
+    const nextUsername = username.value;
+    if (!nextUsername || previousUsername !== nextUsername || previousClientId !== nextSession.clientId) {
+      collection.value = null;
+      accountLookupUsername = "";
+    }
     const sameAccount = String(accountData.value?.channelUsername || "").toLowerCase() === nextUsername.toLowerCase();
     if (!nextUsername || !sameAccount) {
       accountData.value = null;
       selectedVideoId.value = "";
     }
-    if (String(session.value?.status || "") === "authenticated" && !accountData.value) void loadAccountData(options);
+    if (authenticated.value && (!options.background || accountLookupUsername !== nextUsername)) void loadAccountData(options);
   } catch (cause) {
+    if (disposed) return;
+    session.value = null;
+    accountData.value = null;
+    collection.value = null;
+    accountLookupUsername = "";
+    selectedVideoId.value = "";
     error.value = `账号连接状态读取失败：${cause instanceof Error ? cause.message : cause}`;
   } finally {
     loading.value = false;
     refreshing.value = false;
-    if (authenticated.value) {
-      if (timer) window.clearInterval(timer);
-      timer = undefined;
-    } else if (!timer) {
-      timer = window.setInterval(() => void load({ background: true }), 5000);
-    }
+    sessionLoading = false;
+    if (!disposed) timer = window.setTimeout(() => void load({ background: true }), authenticated.value ? 15000 : 5000);
   }
 }
 
@@ -70,7 +84,10 @@ async function loadAccountData(options = {}) {
   try {
     const payload = await fetchAccounts({ q: currentUsername, page: 1, pageSize: 20 });
     const match = (payload?.items || []).find((item) => String(item?.channelUsername || "").toLowerCase() === currentUsername.toLowerCase());
-    if (match && currentUsername === username.value) accountData.value = match;
+    if (!disposed && currentUsername === username.value) {
+      accountData.value = match || null;
+      accountLookupUsername = currentUsername;
+    }
   } catch (cause) {
     if (!options.background) error.value = `本账号数据读取失败：${cause instanceof Error ? cause.message : cause}`;
   } finally {
@@ -85,7 +102,7 @@ async function login() {
   notice.value = "";
   try {
     await openChannelAccountLogin(session.value.clientId || node.value?.id || "");
-    notice.value = "已打开登录页，请用手机微信扫码。";
+    notice.value = "已请求在内置浏览器中打开官方登录页，请在该页面用手机微信扫码并确认。";
     await load({ background: true });
   } catch (cause) {
     error.value = `打开 Insight 内置浏览器失败：${cause instanceof Error ? cause.message : cause}`;
@@ -99,12 +116,18 @@ async function collect() {
   busy.value = true;
   error.value = "";
   notice.value = "";
+  const currentUsername = username.value;
+  const currentClientId = session.value.clientId || node.value?.id || "";
   try {
-    collection.value = await collectChannelAccount(session.value.clientId || node.value?.id || "", username.value);
+    const result = await collectChannelAccount(currentClientId, currentUsername);
+    if (disposed || currentUsername !== username.value || currentClientId !== (session.value?.clientId || node.value?.id || "")) return;
+    collection.value = result;
     await loadAccountData();
-    notice.value = `已采集 ${collection.value.itemCount || 0} 条本账号作品，数据已写入工作区。`;
+    if (disposed || currentUsername !== username.value || currentClientId !== (session.value?.clientId || node.value?.id || "")) return;
+    notice.value = `已采集 ${result.itemCount || 0} 条本账号作品，数据已写入工作区。`;
     emit("refresh");
   } catch (cause) {
+    if (disposed || currentUsername !== username.value) return;
     error.value = `本账号作品采集失败：${cause instanceof Error ? cause.message : cause}`;
   } finally {
     busy.value = false;
@@ -135,7 +158,11 @@ function handleAccountVideo(payload) {
 onMounted(() => {
   void load();
 });
-onBeforeUnmount(() => window.clearInterval(timer));
+onBeforeUnmount(() => {
+  disposed = true;
+  window.clearTimeout(timer);
+  sessionController?.abort();
+});
 
 defineExpose({ refresh: () => load({ background: true }) });
 </script>
@@ -171,26 +198,10 @@ defineExpose({ refresh: () => load({ background: true }) });
         <div class="platform-account-hero-actions">
           <n-button v-if="!authenticated" type="primary" :disabled="session?.status === 'offline'" :loading="busy" @click="login">
             <template #icon><ExternalLink /></template>
-            打开登录页
+            在内置浏览器中登录
           </n-button>
           <n-button v-else type="primary" :loading="busy" @click="collect">采集本账号作品</n-button>
           <n-button v-if="authenticated" secondary :disabled="busy" @click="openData">查看本账号数据</n-button>
-        </div>
-      </section>
-
-      <section v-if="session?.status === 'login_required'" class="platform-account-login-card">
-        <div class="platform-account-login-copy">
-          <span class="platform-account-eyebrow">手机扫码登录</span>
-          <h3>扫描二维码连接本账号</h3>
-          <p>使用手机微信扫码，登录后自动识别账号。</p>
-        </div>
-        <div class="platform-account-qr-wrap" :class="{ 'is-empty': !loginQRCode && !loginQRCodeURL }">
-          <img v-if="loginQRCode" class="platform-account-qr" :src="loginQRCode" alt="视频号助手登录二维码" />
-          <iframe v-else-if="loginQRCodeURL" class="platform-account-qr-frame" :src="loginQRCodeURL" title="视频号助手微信扫码登录" loading="eager" />
-          <div v-else class="platform-account-qr-empty">
-            <n-spin size="small" />
-            <span>正在读取二维码…</span>
-          </div>
         </div>
       </section>
 
